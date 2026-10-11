@@ -1,5 +1,4 @@
 import { api } from '../utilities/browser-polyfill';
-import { nip19 } from 'nostr-crypto-utils';
 
 const FEATURES = [
     [
