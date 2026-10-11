@@ -27,6 +27,7 @@ distros/*.zip
 # Test + packaging artifacts
 test-results/
 web-ext-artifacts/
+coverage/
 
 # QA/screenshot artifacts (tooling maintained internally; local leftovers stay untracked)
 dev/qa/

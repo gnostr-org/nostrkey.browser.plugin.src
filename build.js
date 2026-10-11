@@ -241,6 +241,21 @@ async function buildFirefox(opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Test page bundle
+// ---------------------------------------------------------------------------
+async function buildTestPage(opts = {}) {
+    await esbuild.build({
+        ...shared,
+        ...opts,
+        entryPoints: { 'test.build': './test/test.js' },
+        outdir: './test',
+        format: 'esm',
+        splitting: false,
+    });
+    console.log('Test page bundle complete → ./test/test.build.js');
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function run() {
@@ -278,6 +293,8 @@ async function run() {
         // default: safari
         await buildSafari(buildOpts);
     }
+
+    await buildTestPage(buildOpts);
 }
 
 run().catch(err => {

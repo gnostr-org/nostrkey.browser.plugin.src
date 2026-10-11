@@ -19,9 +19,12 @@ function hexToUint8Array(hex) {
     return bytes;
 }
 
-async function getDeterministicPrivateKey() {
+async function getPrivateKey(seedHex = DETERMINISTIC_PEER_SEED_HEX) {
+    if (typeof seedHex !== 'string' || seedHex.length !== 64 || !/^[0-9a-fA-F]+$/.test(seedHex)) {
+        throw new Error('peerSeed must be a 64-character hex string');
+    }
     const { generateKeyPairFromSeed } = await import('@libp2p/crypto/keys');
-    return generateKeyPairFromSeed('Ed25519', hexToUint8Array(DETERMINISTIC_PEER_SEED_HEX));
+    return generateKeyPairFromSeed('Ed25519', hexToUint8Array(seedHex));
 }
 
 // Canonical libp2p bootstrap peers (from a local `ipfs bootstrap list`).
@@ -130,7 +133,7 @@ function shortValue(value, head = 10, tail = 8) {
     return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-export function createLibp2pController({ api, storage, getPubKey, signEvent_, sendStatusUpdate }) {
+export function createLibp2pController({ api, storage, getPubKey, signEvent_, sendStatusUpdate, peerSeed } = {}) {
     const state = {
         node: null,
         ready: false,
@@ -378,7 +381,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
 
         try {
             const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap, gossipsub, webRTC, webRTCDirect, dcutr } = await loadLibp2pModules();
-            const privateKey = await getDeterministicPrivateKey();
+            const privateKey = await getPrivateKey(peerSeed);
             const node = await createLibp2p({
                 privateKey,
                 addresses: {

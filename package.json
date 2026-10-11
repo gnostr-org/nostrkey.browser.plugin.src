@@ -25,6 +25,8 @@
     "cws:release": "npm run cws:upload && npm run cws:publish",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:embed": "vitest run --coverage && node scripts/embed-coverage.js",
     "test:e2e": "npx playwright test",
     "test:all": "vitest run && npx playwright test",
     "p2p:peer": "node scripts/p2p-test-peer.js",
@@ -69,6 +71,7 @@
     "selenium-webdriver": "^4.46.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^3.4.12",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.10"
   }
 }
