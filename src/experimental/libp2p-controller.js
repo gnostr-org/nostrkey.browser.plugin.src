@@ -34,6 +34,65 @@ function isBrowserDialable(addr) {
     return typeof addr === 'string' && (addr.includes('/wss/') || addr.includes('/ws/'));
 }
 
+const DOH_ENDPOINT = 'https://cloudflare-dns.com/dns-query';
+const DNSADDR_MAX_DEPTH = 2;
+
+async function resolveTxtDoH(name) {
+    const url = new URL(DOH_ENDPOINT);
+    url.searchParams.set('name', name);
+    url.searchParams.set('type', 'TXT');
+    const response = await fetch(url.toString(), {
+        headers: { Accept: 'application/dns-json' },
+    });
+    if (!response.ok) {
+        throw new Error(`DoH query failed: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    if (data.Status !== 0) {
+        throw new Error(`DoH query returned status ${data.Status}`);
+    }
+    return (data.Answer || []).map((record) => record.data.replace(/^"|"$/g, ''));
+}
+
+function extractDnsaddrValues(records) {
+    return records
+        .map((record) => record.replace(/^"|"$/g, ''))
+        .filter((record) => record.startsWith('dnsaddr='))
+        .map((record) => record.slice('dnsaddr='.length));
+}
+
+function dnsaddrHostFromMultiaddr(addr) {
+    const match = addr.match(/^\/dnsaddr\/([^/]+)/);
+    return match ? match[1] : null;
+}
+
+async function resolveDnsaddrRecursive(name, depth = DNSADDR_MAX_DEPTH) {
+    if (depth <= 0) return [];
+    const records = await resolveTxtDoH(name);
+    const addrs = extractDnsaddrValues(records);
+    const results = [];
+    for (const addr of addrs) {
+        if (isBrowserDialable(addr)) {
+            results.push(addr);
+            continue;
+        }
+        const host = dnsaddrHostFromMultiaddr(addr);
+        if (host) {
+            const nested = await resolveDnsaddrRecursive(`_dnsaddr.${host}`, depth - 1);
+            results.push(...nested);
+        }
+    }
+    return results;
+}
+
+async function resolveBootstrapWssAddrs() {
+    try {
+        return await resolveDnsaddrRecursive('_dnsaddr.bootstrap.libp2p.io');
+    } catch (error) {
+        return [];
+    }
+}
+
 function shortValue(value, head = 10, tail = 8) {
     if (!value) return '';
     if (value.length <= head + tail + 3) return value;
@@ -193,9 +252,17 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             rebuildRelayDescriptor();
             pushLog(`Node started with peer ID ${peerId}`);
 
-            const autoDialAddrs = [...state.defaultBootstrapAddrs, ...state.bootstrapAddrs];
+            const resolvedWss = await resolveBootstrapWssAddrs();
+            if (resolvedWss.length) {
+                pushLog(`Resolved ${resolvedWss.length} WSS bootstrap endpoint(s) via DoH`);
+            }
+            const autoDialAddrs = [
+                ...resolvedWss,
+                ...state.defaultBootstrapAddrs,
+                ...state.bootstrapAddrs,
+            ];
             if (autoDialAddrs.length) {
-                pushLog(`Auto-dialing ${state.defaultBootstrapAddrs.length} default IPFS bootstrap relay(s) and ${state.bootstrapAddrs.length} custom address(es)`);
+                pushLog(`Auto-dialing ${autoDialAddrs.length} bootstrap address(es)`);
                 await dialBootstrapAddrs(autoDialAddrs);
             }
 
