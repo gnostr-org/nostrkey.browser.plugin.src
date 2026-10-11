@@ -77,6 +77,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             yamuxModule,
             pingModule,
             circuitRelayModule,
+            identifyModule,
         ] = await Promise.all([
             import('libp2p'),
             import('@libp2p/websockets'),
@@ -84,6 +85,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             import('@libp2p/yamux'),
             import('@libp2p/ping'),
             import('@libp2p/circuit-relay-v2'),
+            import('@libp2p/identify'),
         ]);
         libp2pModules = {
             createLibp2p: libp2pModule.createLibp2p,
@@ -92,6 +94,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             yamux: yamuxModule.yamux,
             ping: pingModule.ping,
             circuitRelayTransport: circuitRelayModule.circuitRelayTransport,
+            identify: identifyModule.identify,
         };
         return libp2pModules;
     }
@@ -134,13 +137,16 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         updateStatus({ starting: true, lastError: '' });
 
         try {
-            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport } = await loadLibp2pModules();
+            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify } = await loadLibp2pModules();
             const node = await createLibp2p({
                 addresses: { listen: [] },
                 transports: [webSockets(), circuitRelayTransport()],
                 connectionEncryption: [noise()],
                 streamMuxers: [yamux()],
-                services: { ping: ping() },
+                services: {
+                    ping: ping(),
+                    identify: identify(),
+                },
             });
 
             await node.start();
