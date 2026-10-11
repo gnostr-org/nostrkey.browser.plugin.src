@@ -19,18 +19,21 @@ const state = {
         starting: false,
         stopping: false,
         binding: false,
+        bootstrapping: false,
         peerId: '',
         peerIdShort: '',
         activePubkey: '',
         activeNpub: '',
         attestation: null,
         relayDescriptor: null,
+        bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
         lastBindError: '',
+        lastBootstrapError: '',
         lastError: '',
         logs: [],
     },
@@ -120,17 +123,20 @@ function renderLibp2p() {
         starting,
         stopping,
         binding,
+        bootstrapping,
         peerId,
         peerIdShort,
         activePubkey,
         activeNpub,
         attestation,
         listenAddrs,
+        bootstrapAddrs,
         connectionCount,
         lastDialTarget,
         lastDialPeer,
         lastPingLatency,
         lastBindError,
+        lastBootstrapError,
         lastError,
         logs,
     } = state.libp2p;
@@ -186,6 +192,12 @@ function renderLibp2p() {
     if (bindErrorEl) {
         bindErrorEl.textContent = lastBindError || '';
         bindErrorEl.classList.toggle('hidden', !lastBindError);
+    }
+
+    const bootstrapErrorEl = $('libp2p-bootstrap-error');
+    if (bootstrapErrorEl) {
+        bootstrapErrorEl.textContent = lastBootstrapError || '';
+        bootstrapErrorEl.classList.toggle('hidden', !lastBootstrapError);
     }
 
     const activePubkeyEl = $('libp2p-active-pubkey');
@@ -269,6 +281,20 @@ function renderLibp2p() {
     const copyRelayBtn = $('libp2p-copy-relay-btn');
     if (copyRelayBtn) {
         copyRelayBtn.disabled = !state.libp2p.relayDescriptor;
+    }
+
+    const bootstrapBtn = $('libp2p-bootstrap-btn');
+    if (bootstrapBtn) {
+        bootstrapBtn.disabled = !ready || starting || stopping || bootstrapping;
+    }
+
+    const bootstrapInput = $('libp2p-bootstrap-input');
+    if (bootstrapInput) {
+        const nextValue = bootstrapAddrs.join('\n');
+        if (document.activeElement !== bootstrapInput && bootstrapInput.value !== nextValue) {
+            bootstrapInput.value = nextValue;
+        }
+        bootstrapInput.disabled = !ready || starting || stopping;
     }
 }
 
@@ -354,6 +380,61 @@ async function ensureLibp2pNode() {
     }
 }
 
+async function saveBootstrapAddrs(addrs) {
+    state.libp2p.bootstrapAddrs = addrs;
+    await api.storage.local.set({
+        'experimental:libp2p-bootstrap': addrs,
+    });
+    renderLibp2p();
+}
+
+async function bootstrapLibp2pNode() {
+    const node = await ensureLibp2pNode();
+    const input = $('libp2p-bootstrap-input');
+    const raw = input?.value || '';
+    const addrs = raw
+        .split(/\r?\n|,/)
+        .map((addr) => addr.trim())
+        .filter(Boolean);
+
+    if (!addrs.length) {
+        state.libp2p.lastBootstrapError = 'Add at least one bootstrap multiaddr.';
+        renderLibp2p();
+        return;
+    }
+
+    state.libp2p.bootstrapping = true;
+    state.libp2p.lastBootstrapError = '';
+    renderLibp2p();
+
+    try {
+        await saveBootstrapAddrs(addrs);
+        for (const addr of addrs) {
+            pushLibp2pLog(`Bootstrapping to ${addr}`);
+            try {
+                await node.dial(addr);
+                state.libp2p.lastDialTarget = addr;
+                const connections = node.getConnections();
+                const lastConnection = connections.length ? connections[connections.length - 1] : null;
+                state.libp2p.lastDialPeer = lastConnection?.remotePeer?.toString?.() || addr;
+                pushLibp2pLog(`Bootstrap connected: ${state.libp2p.lastDialPeer}`);
+                break;
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                pushLibp2pLog(`Bootstrap dial failed for ${addr}: ${message}`, 'warn');
+            }
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        state.libp2p.lastBootstrapError = message;
+        pushLibp2pLog(`Bootstrap failed: ${message}`, 'error');
+    } finally {
+        state.libp2p.connectionCount = node.getConnections().length;
+        state.libp2p.bootstrapping = false;
+        renderLibp2p();
+    }
+}
+
 async function loadSavedLibp2pBinding() {
     try {
         const stored = await api.storage.local.get({
@@ -391,6 +472,21 @@ async function loadSavedLibp2pBinding() {
         renderLibp2p();
     } catch (error) {
         console.warn('Failed to restore libp2p binding:', error);
+    }
+}
+
+async function loadSavedLibp2pBootstrap() {
+    try {
+        const stored = await api.storage.local.get({
+            'experimental:libp2p-bootstrap': [],
+        });
+        const saved = stored['experimental:libp2p-bootstrap'];
+        state.libp2p.bootstrapAddrs = Array.isArray(saved)
+            ? saved.filter((addr) => typeof addr === 'string' && addr.trim())
+            : [];
+        renderLibp2p();
+    } catch (error) {
+        console.warn('Failed to restore libp2p bootstrap addresses:', error);
     }
 }
 
@@ -593,6 +689,7 @@ function renderLibp2pSection() {
 async function init() {
     await reloadFeatures();
     await loadSavedLibp2pBinding();
+    await loadSavedLibp2pBootstrap();
     renderLibp2pSection();
 
     $('libp2p-start-btn')?.addEventListener('click', async () => {
@@ -611,6 +708,10 @@ async function init() {
 
     $('libp2p-bind-btn')?.addEventListener('click', async () => {
         await bindLibp2pIdentity();
+    });
+
+    $('libp2p-bootstrap-btn')?.addEventListener('click', async () => {
+        await bootstrapLibp2pNode();
     });
 
     $('libp2p-copy-bind-btn')?.addEventListener('click', async () => {

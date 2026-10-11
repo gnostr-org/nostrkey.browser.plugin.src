@@ -86,6 +86,21 @@
                             <button id="libp2p-dial-btn" class="button button--secondary flex-1" type="button">Dial and ping</button>
                         </div>
 
+                        <label class="exp-field">
+                            <span class="exp-label">Bootstrap multiaddrs</span>
+                            <textarea
+                                id="libp2p-bootstrap-input"
+                                class="input"
+                                rows="3"
+                                placeholder="/dns4/bootstrap.example/tcp/443/wss/p2p/12D3KooW...\n/dns4/another.example/tcp/443/wss/p2p/12D3KooW..."
+                                spellcheck="false"
+                            ></textarea>
+                        </label>
+
+                        <div class="exp-actions">
+                            <button id="libp2p-bootstrap-btn" class="button button--secondary flex-1" type="button">Bootstrap peer list</button>
+                        </div>
+
                         <div class="exp-actions">
                             <button id="libp2p-bind-btn" class="button button--primary flex-1" type="button">Bind active Nostr identity</button>
                             <button id="libp2p-copy-bind-btn" class="button button--muted flex-1" type="button">Copy attestation</button>
@@ -124,6 +139,7 @@
 
                         <div id="libp2p-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
                         <div id="libp2p-bind-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
+                        <div id="libp2p-bootstrap-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
 
                         <div class="exp-field">
                             <div class="exp-label">Advertised listen addresses</div>
