@@ -34,24 +34,36 @@ function isBrowserDialable(addr) {
     return typeof addr === 'string' && (addr.includes('/wss/') || addr.includes('/ws/'));
 }
 
-const DOH_ENDPOINT = 'https://cloudflare-dns.com/dns-query';
+const DOH_ENDPOINTS = [
+    'https://cloudflare-dns.com/dns-query',
+    'https://dns.quad9.net:5053/dns-query',
+    'https://dns.adguard-dns.com/resolve',
+];
 const DNSADDR_MAX_DEPTH = 2;
 
 async function resolveTxtDoH(name) {
-    const url = new URL(DOH_ENDPOINT);
-    url.searchParams.set('name', name);
-    url.searchParams.set('type', 'TXT');
-    const response = await fetch(url.toString(), {
-        headers: { Accept: 'application/dns-json' },
-    });
-    if (!response.ok) {
-        throw new Error(`DoH query failed: ${response.status} ${response.statusText}`);
+    const errors = [];
+    for (const endpoint of DOH_ENDPOINTS) {
+        try {
+            const url = new URL(endpoint);
+            url.searchParams.set('name', name);
+            url.searchParams.set('type', 'TXT');
+            const response = await fetch(url.toString(), {
+                headers: { Accept: 'application/dns-json' },
+            });
+            if (!response.ok) {
+                throw new Error(`${endpoint} returned ${response.status} ${response.statusText}`);
+            }
+            const data = await response.json();
+            if (data.Status !== 0) {
+                throw new Error(`${endpoint} returned DNS status ${data.Status}`);
+            }
+            return (data.Answer || []).map((record) => record.data.replace(/^"|"$/g, ''));
+        } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error));
+        }
     }
-    const data = await response.json();
-    if (data.Status !== 0) {
-        throw new Error(`DoH query returned status ${data.Status}`);
-    }
-    return (data.Answer || []).map((record) => record.data.replace(/^"|"$/g, ''));
+    throw new Error(`All DoH endpoints failed: ${errors.join('; ')}`);
 }
 
 function extractDnsaddrValues(records) {
