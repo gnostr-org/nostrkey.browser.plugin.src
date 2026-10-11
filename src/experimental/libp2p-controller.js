@@ -1,0 +1,474 @@
+import { nip19 } from 'nostr-crypto-utils';
+
+const BINDING_STORAGE_KEY = 'experimental:libp2p-binding';
+const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
+const LOG_LIMIT = 64;
+
+function shortValue(value, head = 10, tail = 8) {
+    if (!value) return '';
+    if (value.length <= head + tail + 3) return value;
+    return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+export function createLibp2pController({ api, storage, getPubKey, signEvent_, sendStatusUpdate }) {
+    const state = {
+        node: null,
+        ready: false,
+        starting: false,
+        stopping: false,
+        binding: false,
+        bootstrapping: false,
+        peerId: '',
+        peerIdShort: '',
+        activePubkey: '',
+        activeNpub: '',
+        attestation: null,
+        relayDescriptor: null,
+        bootstrapAddrs: [],
+        listenAddrs: [],
+        connectionCount: 0,
+        lastDialTarget: '',
+        lastDialPeer: '',
+        lastPingLatency: '',
+        lastBindError: '',
+        lastBootstrapError: '',
+        lastError: '',
+        logs: [],
+    };
+
+    let libp2pModules = null;
+
+    function pushLog(message, kind = 'info') {
+        const ts = new Date().toISOString();
+        state.logs = [...state.logs, { ts, kind, message }].slice(-LOG_LIMIT);
+        broadcastStatus();
+    }
+
+    function broadcastStatus() {
+        try {
+            sendStatusUpdate(getStatus());
+        } catch (_) {
+            // Broadcast is best-effort; callers also receive explicit responses.
+        }
+    }
+
+    function updateStatus(updates) {
+        Object.assign(state, updates);
+        broadcastStatus();
+    }
+
+    async function loadLibp2pModules() {
+        if (libp2pModules) return libp2pModules;
+        const [
+            libp2pModule,
+            websocketsModule,
+            noiseModule,
+            yamuxModule,
+            pingModule,
+        ] = await Promise.all([
+            import('libp2p'),
+            import('@libp2p/websockets'),
+            import('@chainsafe/libp2p-noise'),
+            import('@libp2p/yamux'),
+            import('@libp2p/ping'),
+        ]);
+        libp2pModules = {
+            createLibp2p: libp2pModule.createLibp2p,
+            webSockets: websocketsModule.webSockets,
+            noise: noiseModule.noise,
+            yamux: yamuxModule.yamux,
+            ping: pingModule.ping,
+        };
+        return libp2pModules;
+    }
+
+    function rebuildRelayDescriptor() {
+        if (!state.attestation || !state.activePubkey || !state.peerId) {
+            state.relayDescriptor = null;
+            return;
+        }
+        state.relayDescriptor = {
+            title: 'NostrKey libp2p relay experiment',
+            npub: state.activeNpub || nip19.npubEncode(state.activePubkey),
+            pubkey: state.activePubkey,
+            peerId: state.peerId,
+            peerIdShort: state.peerIdShort,
+            listenAddrs: state.listenAddrs,
+            attestationId: state.attestation.id,
+            attestationKind: state.attestation.kind,
+            createdAt: new Date().toISOString(),
+        };
+    }
+
+    function attachNodeListeners(node) {
+        node.addEventListener('peer:connect', (event) => {
+            const remotePeer = event.detail?.toString?.() || String(event.detail || '');
+            state.connectionCount = node.getConnections().length;
+            pushLog(`Peer connected: ${remotePeer}`);
+        });
+        node.addEventListener('peer:disconnect', (event) => {
+            const remotePeer = event.detail?.toString?.() || String(event.detail || '');
+            state.connectionCount = node.getConnections().length;
+            pushLog(`Peer disconnected: ${remotePeer}`);
+        });
+    }
+
+    async function startNode() {
+        if (state.node) return { success: true, status: getStatus() };
+        if (state.starting) return { success: true, status: getStatus() };
+
+        updateStatus({ starting: true, lastError: '' });
+
+        try {
+            const { createLibp2p, webSockets, noise, yamux, ping } = await loadLibp2pModules();
+            const node = await createLibp2p({
+                addresses: { listen: [] },
+                transports: [webSockets()],
+                connectionEncryption: [noise()],
+                streamMuxers: [yamux()],
+                services: { ping: ping() },
+            });
+
+            await node.start();
+            attachNodeListeners(node);
+
+            const peerId = node.peerId?.toString?.() || String(node.peerId || '');
+            state.node = node;
+            state.ready = true;
+            state.peerId = peerId;
+            state.peerIdShort = shortValue(peerId, 14, 10);
+            state.listenAddrs = node.getMultiaddrs().map((addr) => addr.toString());
+            state.connectionCount = node.getConnections().length;
+            state.lastError = '';
+            rebuildRelayDescriptor();
+            pushLog(`Node started with peer ID ${peerId}`);
+
+            if (state.bootstrapAddrs.length) {
+                await dialBootstrapAddrs(state.bootstrapAddrs);
+            }
+
+            updateStatus({ starting: false });
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.node = null;
+            state.ready = false;
+            state.peerId = '';
+            state.peerIdShort = '';
+            state.listenAddrs = [];
+            state.connectionCount = 0;
+            state.lastError = message;
+            pushLog(`Start failed: ${message}`, 'error');
+            updateStatus({ starting: false });
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
+    async function stopNode() {
+        if (!state.node) return { success: true, status: getStatus() };
+        if (state.stopping) return { success: true, status: getStatus() };
+
+        updateStatus({ stopping: true });
+        const node = state.node;
+        state.node = null;
+
+        try {
+            await node.stop();
+            pushLog('Node stopped.');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastError = message;
+            pushLog(`Stop failed: ${message}`, 'error');
+        } finally {
+            updateStatus({
+                ready: false,
+                stopping: false,
+                peerId: '',
+                peerIdShort: '',
+                listenAddrs: [],
+                connectionCount: 0,
+                lastDialTarget: '',
+                lastDialPeer: '',
+                lastPingLatency: '',
+            });
+        }
+        return { success: true, status: getStatus() };
+    }
+
+    async function dialPeer(target) {
+        if (!target || typeof target !== 'string') {
+            return { success: false, error: 'Enter a libp2p multiaddr first.', status: getStatus() };
+        }
+
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        const node = state.node;
+        if (!node) {
+            return { success: false, error: 'Node not available.', status: getStatus() };
+        }
+
+        state.lastDialTarget = target;
+        state.lastError = '';
+        updateStatus({});
+
+        try {
+            pushLog(`Dialing ${target}`);
+            const connection = await node.dial(target);
+            const remotePeer = connection?.remotePeer?.toString?.() || String(connection?.remotePeer || '');
+            state.lastDialPeer = remotePeer || target;
+            state.connectionCount = node.getConnections().length;
+            pushLog(`Connected to ${state.lastDialPeer}`);
+
+            if (node.services?.ping?.ping && connection?.remotePeer) {
+                const pingStart = performance.now();
+                let observed = false;
+                for await (const _ of node.services.ping.ping(connection.remotePeer)) {
+                    const latency = Math.max(0, Math.round(performance.now() - pingStart));
+                    state.lastPingLatency = `${latency} ms`;
+                    pushLog(`Ping returned in ${state.lastPingLatency}`);
+                    observed = true;
+                    break;
+                }
+                if (!observed) {
+                    state.lastPingLatency = 'No ping result';
+                    pushLog('Ping completed without a readable latency.', 'warn');
+                }
+            } else {
+                state.lastPingLatency = 'Ping service unavailable';
+            }
+
+            updateStatus({});
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastError = message;
+            state.lastDialPeer = '';
+            state.lastPingLatency = '';
+            pushLog(`Dial failed: ${message}`, 'error');
+            updateStatus({});
+            return { success: false, error: message, status: getStatus() };
+        } finally {
+            state.connectionCount = state.node?.getConnections().length || 0;
+            updateStatus({});
+        }
+    }
+
+    async function dialBootstrapAddrs(addrs) {
+        if (!Array.isArray(addrs) || !addrs.length) return { success: false, error: 'No bootstrap addresses.' };
+        const node = state.node;
+        if (!node) return { success: false, error: 'Node not started.' };
+
+        for (const addr of addrs) {
+            pushLog(`Bootstrapping to ${addr}`);
+            try {
+                await node.dial(addr);
+                const connections = node.getConnections();
+                const lastConnection = connections.length ? connections[connections.length - 1] : null;
+                state.lastDialTarget = addr;
+                state.lastDialPeer = lastConnection?.remotePeer?.toString?.() || addr;
+                state.connectionCount = connections.length;
+                pushLog(`Bootstrap connected: ${state.lastDialPeer}`);
+                return { success: true, status: getStatus() };
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                pushLog(`Bootstrap dial failed for ${addr}: ${message}`, 'warn');
+            }
+        }
+        return { success: false, error: `Failed to dial all ${addrs.length} bootstrap address(es).`, status: getStatus() };
+    }
+
+    async function setBootstrapAddrs(addrs) {
+        const list = Array.isArray(addrs)
+            ? addrs.filter((a) => typeof a === 'string' && a.trim())
+            : [];
+        if (!list.length) {
+            return { success: false, error: 'Add at least one bootstrap multiaddr.', status: getStatus() };
+        }
+
+        state.bootstrapAddrs = list;
+        state.lastBootstrapError = '';
+        await storage.set({ [BOOTSTRAP_STORAGE_KEY]: list });
+        pushLog(`Bootstrap list saved (${list.length} address(es))`);
+
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+
+        updateStatus({ bootstrapping: true });
+        try {
+            const result = await dialBootstrapAddrs(list);
+            return result;
+        } finally {
+            updateStatus({ bootstrapping: false });
+        }
+    }
+
+    async function bindIdentity() {
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+
+        updateStatus({ binding: true, lastBindError: '' });
+
+        try {
+            const rawPubkey = await getPubKey();
+            if (typeof rawPubkey !== 'string' || !rawPubkey) {
+                throw new Error('Unable to read the active Nostr pubkey.');
+            }
+
+            const npub = nip19.npubEncode(rawPubkey);
+            const payload = {
+                peerId: state.peerId,
+                listenAddrs: state.listenAddrs,
+                protocol: 'nostrkey-libp2p-experiment',
+                createdAt: new Date().toISOString(),
+                note: 'Nostr-authenticated libp2p node binding',
+            };
+
+            const unsigned = {
+                kind: 31337,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                    ['d', 'libp2p-binding'],
+                    ['peer', state.peerId],
+                    ...state.listenAddrs.map((addr) => ['relay', addr]),
+                ],
+                content: JSON.stringify(payload),
+                pubkey: rawPubkey,
+            };
+
+            pushLog(`Signing attestation for ${npub}`);
+            const attestation = await signEvent_(unsigned, 'libp2p-attestation');
+            if (!attestation || typeof attestation !== 'object') {
+                throw new Error('No attestation returned from the signer.');
+            }
+
+            state.activePubkey = rawPubkey;
+            state.activeNpub = npub;
+            state.attestation = { ...attestation, binding: payload };
+            rebuildRelayDescriptor();
+
+            await storage.set({
+                [BINDING_STORAGE_KEY]: {
+                    attestation: state.attestation,
+                    activePubkey: state.activePubkey,
+                    activeNpub: state.activeNpub,
+                    relayDescriptor: state.relayDescriptor,
+                    peerId: state.peerId,
+                },
+            });
+
+            pushLog(`Bound ${npub} to peer ${state.peerId}`);
+            pushLog(`Attestation signed as event ${attestation.id}`);
+            updateStatus({ binding: false });
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastBindError = message;
+            pushLog(`Bind failed: ${message}`, 'error');
+            updateStatus({ binding: false });
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
+    async function clearBinding() {
+        state.attestation = null;
+        state.activePubkey = '';
+        state.activeNpub = '';
+        state.relayDescriptor = null;
+        state.lastBindError = '';
+        await storage.remove(BINDING_STORAGE_KEY);
+        pushLog('Cleared libp2p binding.');
+        updateStatus({});
+        return { success: true, status: getStatus() };
+    }
+
+    async function loadSavedState() {
+        try {
+            const stored = await storage.get({
+                [BINDING_STORAGE_KEY]: null,
+                [BOOTSTRAP_STORAGE_KEY]: [],
+            });
+
+            const binding = stored[BINDING_STORAGE_KEY];
+            if (binding && typeof binding === 'object') {
+                state.attestation = binding.attestation || null;
+                state.activePubkey = binding.activePubkey || '';
+                state.activeNpub = binding.activeNpub || '';
+                if (binding.peerId) {
+                    state.peerId = binding.peerId;
+                    state.peerIdShort = shortValue(binding.peerId, 14, 10);
+                }
+                if (binding.attestation?.binding?.peerId && !state.peerId) {
+                    state.peerId = binding.attestation.binding.peerId;
+                    state.peerIdShort = shortValue(binding.attestation.binding.peerId, 14, 10);
+                }
+                state.relayDescriptor = binding.relayDescriptor || (
+                    state.attestation && state.activePubkey && state.peerId
+                        ? {
+                            title: 'NostrKey libp2p relay experiment',
+                            npub: state.activeNpub || nip19.npubEncode(state.activePubkey),
+                            pubkey: state.activePubkey,
+                            peerId: state.peerId,
+                            peerIdShort: state.peerIdShort,
+                            listenAddrs: state.attestation.binding?.listenAddrs || [],
+                            attestationId: state.attestation.id,
+                            attestationKind: state.attestation.kind,
+                            createdAt: state.attestation.created_at
+                                ? new Date(state.attestation.created_at * 1000).toISOString()
+                                : new Date().toISOString(),
+                        }
+                        : null
+                );
+                pushLog('Restored libp2p binding from storage.');
+            }
+
+            const bootstrap = stored[BOOTSTRAP_STORAGE_KEY];
+            state.bootstrapAddrs = Array.isArray(bootstrap)
+                ? bootstrap.filter((addr) => typeof addr === 'string' && addr.trim())
+                : [];
+            if (state.bootstrapAddrs.length) {
+                pushLog(`Restored ${state.bootstrapAddrs.length} bootstrap address(es).`);
+            }
+
+            broadcastStatus();
+        } catch (error) {
+            pushLog(`Failed to restore libp2p state: ${error instanceof Error ? error.message : String(error)}`, 'warn');
+        }
+    }
+
+    function getStatus() {
+        return {
+            ready: state.ready,
+            starting: state.starting,
+            stopping: state.stopping,
+            binding: state.binding,
+            bootstrapping: state.bootstrapping,
+            peerId: state.peerId,
+            peerIdShort: state.peerIdShort,
+            activePubkey: state.activePubkey,
+            activeNpub: state.activeNpub,
+            attestation: state.attestation,
+            relayDescriptor: state.relayDescriptor,
+            bootstrapAddrs: [...state.bootstrapAddrs],
+            listenAddrs: [...state.listenAddrs],
+            connectionCount: state.connectionCount,
+            lastDialTarget: state.lastDialTarget,
+            lastDialPeer: state.lastDialPeer,
+            lastPingLatency: state.lastPingLatency,
+            lastBindError: state.lastBindError,
+            lastBootstrapError: state.lastBootstrapError,
+            lastError: state.lastError,
+            logs: [...state.logs],
+        };
+    }
+
+    return {
+        startNode,
+        stopNode,
+        dialPeer,
+        setBootstrapAddrs,
+        bindIdentity,
+        clearBinding,
+        getStatus,
+        loadSavedState,
+    };
+}
