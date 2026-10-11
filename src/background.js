@@ -1169,6 +1169,9 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case 'libp2p.publishTopic':
             reply(sendResponse, () => libp2pController.publishTopic(message.payload.topic, message.payload.data));
             return true;
+        case 'libp2p.setAutoPing':
+            reply(sendResponse, () => libp2pController.setAutoPing(message.payload));
+            return true;
 
         // --- Master password / lock handlers ---
         // NOTE: These use sendResponse + return true (callback pattern) because

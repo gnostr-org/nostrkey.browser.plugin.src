@@ -3,6 +3,7 @@ import { multiaddr } from '@multiformats/multiaddr';
 
 const BINDING_STORAGE_KEY = 'experimental:libp2p-binding';
 const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
+const AUTO_PING_STORAGE_KEY = 'experimental:libp2p-auto-ping';
 const LOG_LIMIT = 64;
 
 // Canonical libp2p bootstrap peers (from a local `ipfs bootstrap list`).
@@ -142,10 +143,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         lastPubsubError: '',
         lastError: '',
         logs: [],
+        autoPingEnabled: false,
+        autoPingInterval: 30,
     };
 
     let libp2pModules = null;
     let statusInterval = null;
+    let pingInterval = null;
 
     function startStatusRefresh() {
         if (statusInterval) return;
@@ -167,6 +171,50 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         if (statusInterval) {
             clearInterval(statusInterval);
             statusInterval = null;
+        }
+    }
+
+    async function pingAllPeers() {
+        const node = state.node;
+        if (!node) return;
+        const pingService = node.services?.ping;
+        if (!pingService?.ping) return;
+        const connections = node.getConnections();
+        if (!connections.length) return;
+
+        for (const connection of connections) {
+            const remotePeer = connection?.remotePeer;
+            if (!remotePeer) continue;
+            const peerId = remotePeer.toString();
+            try {
+                const pingStart = performance.now();
+                for await (const _ of pingService.ping(remotePeer)) {
+                    const latency = Math.max(0, Math.round(performance.now() - pingStart));
+                    pushLog(`Auto-ping ${shortValue(peerId, 14, 10)}: ${latency} ms`);
+                    break;
+                }
+            } catch (error) {
+                pushLog(`Auto-ping failed for ${shortValue(peerId, 14, 10)}: ${error instanceof Error ? error.message : String(error)}`, 'warn');
+            }
+        }
+    }
+
+    function startAutoPing() {
+        if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = null;
+        }
+        if (!state.autoPingEnabled || state.autoPingInterval <= 0) return;
+        pingInterval = setInterval(() => {
+            void pingAllPeers();
+        }, state.autoPingInterval * 1000);
+        pushLog(`Auto-ping enabled every ${state.autoPingInterval}s`);
+    }
+
+    function stopAutoPing() {
+        if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = null;
         }
     }
 
@@ -365,6 +413,20 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 await dialBootstrapAddrs(autoDialAddrs);
             }
 
+            const pubsub = node.services?.pubsub;
+            if (pubsub) {
+                try {
+                    pubsub.subscribe('gnostr');
+                    state.subscribedTopics = pubsub.getTopics();
+                    refreshPubsubPeers();
+                    pushLog('Auto-subscribed to pubsub topic \'gnostr\'');
+                } catch (error) {
+                    pushLog(`Auto-subscribe to 'gnostr' failed: ${error instanceof Error ? error.message : String(error)}`, 'warn');
+                }
+            }
+
+            startAutoPing();
+
             updateStatus({ starting: false });
             return { success: true, status: getStatus() };
         } catch (error) {
@@ -399,6 +461,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             pushLog(`Stop failed: ${message}`, 'error');
         } finally {
             stopStatusRefresh();
+            stopAutoPing();
             updateStatus({
                 ready: false,
                 stopping: false,
@@ -532,6 +595,28 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         } finally {
             updateStatus({ bootstrapping: false });
         }
+    }
+
+    async function setAutoPing({ enabled, interval }) {
+        const nextEnabled = Boolean(enabled);
+        const nextInterval = Math.max(5, Math.min(3600, Math.floor(Number(interval) || 30)));
+
+        state.autoPingEnabled = nextEnabled;
+        state.autoPingInterval = nextInterval;
+        await storage.set({
+            [AUTO_PING_STORAGE_KEY]: {
+                enabled: nextEnabled,
+                interval: nextInterval,
+            },
+        });
+
+        stopAutoPing();
+        if (state.node) {
+            startAutoPing();
+        }
+
+        pushLog(`Auto-ping ${nextEnabled ? `enabled every ${nextInterval}s` : 'disabled'}`);
+        return { success: true, status: getStatus() };
     }
 
     async function subscribeTopic(topic) {
@@ -698,6 +783,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const stored = await storage.get({
                 [BINDING_STORAGE_KEY]: null,
                 [BOOTSTRAP_STORAGE_KEY]: [],
+                [AUTO_PING_STORAGE_KEY]: null,
             });
 
             const binding = stored[BINDING_STORAGE_KEY];
@@ -743,6 +829,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 pushLog(`Restored ${state.bootstrapAddrs.length} custom bootstrap address(es).`);
             }
 
+            const autoPing = stored[AUTO_PING_STORAGE_KEY];
+            if (autoPing && typeof autoPing === 'object') {
+                state.autoPingEnabled = Boolean(autoPing.enabled);
+                state.autoPingInterval = Math.max(5, Math.min(3600, Math.floor(Number(autoPing.interval) || 30)));
+                pushLog(`Restored auto-ping: ${state.autoPingEnabled ? `enabled every ${state.autoPingInterval}s` : 'disabled'}`);
+            }
+
             broadcastStatus();
         } catch (error) {
             pushLog(`Failed to restore libp2p state: ${error instanceof Error ? error.message : String(error)}`, 'warn');
@@ -779,6 +872,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             lastPubsubError: state.lastPubsubError,
             lastError: state.lastError,
             logs: [...state.logs],
+            autoPingEnabled: state.autoPingEnabled,
+            autoPingInterval: state.autoPingInterval,
         };
     }
 
@@ -787,6 +882,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         stopNode,
         dialPeer,
         setBootstrapAddrs,
+        setAutoPing,
         subscribeTopic,
         unsubscribeTopic,
         publishTopic,

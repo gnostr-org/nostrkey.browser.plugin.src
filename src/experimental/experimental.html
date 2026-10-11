@@ -82,6 +82,28 @@
                             <button id="libp2p-stop-btn" class="button button--stop flex-1" type="button">Stop node</button>
                         </div>
 
+                        <div class="exp-field">
+                            <div class="exp-label">Auto-ping connected peers</div>
+                            <div class="exp-actions exp-actions--align-start">
+                                <label class="exp-toggle">
+                                    <input id="libp2p-auto-ping-toggle" type="checkbox" class="checkbox" />
+                                    <span>Enable</span>
+                                </label>
+                                <label class="exp-interval">
+                                    <span>every</span>
+                                    <input
+                                        id="libp2p-auto-ping-interval"
+                                        class="input input--narrow"
+                                        type="number"
+                                        min="5"
+                                        max="3600"
+                                        value="30"
+                                    />
+                                    <span>seconds</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <label class="exp-field">
                             <span class="exp-label">Target multiaddr</span>
                             <input

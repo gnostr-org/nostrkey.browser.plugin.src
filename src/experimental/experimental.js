@@ -33,6 +33,8 @@ const state = {
         pubsubPeers: [],
         subscribedTopics: [],
         pubsubMessages: [],
+        autoPingEnabled: false,
+        autoPingInterval: 30,
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
@@ -376,6 +378,17 @@ function renderLibp2p() {
     if (publishInput) {
         publishInput.disabled = !ready || starting || stopping;
     }
+
+    const autoPingToggle = $('libp2p-auto-ping-toggle');
+    if (autoPingToggle) {
+        autoPingToggle.checked = state.libp2p.autoPingEnabled;
+    }
+
+    const autoPingInterval = $('libp2p-auto-ping-interval');
+    if (autoPingInterval) {
+        autoPingInterval.value = String(state.libp2p.autoPingInterval);
+        autoPingInterval.disabled = !state.libp2p.autoPingEnabled;
+    }
 }
 
 async function startLibp2pNode() {
@@ -479,6 +492,14 @@ async function publishPubsubMessage() {
     await sendLibp2pMessage('libp2p.publishTopic', { topic, data });
 }
 
+async function updateAutoPing() {
+    const toggle = $('libp2p-auto-ping-toggle');
+    const intervalInput = $('libp2p-auto-ping-interval');
+    const enabled = toggle?.checked ?? false;
+    const interval = Math.max(5, Math.min(3600, Math.floor(Number(intervalInput?.value) || 30)));
+    await sendLibp2pMessage('libp2p.setAutoPing', { enabled, interval });
+}
+
 function handleRuntimeMessage(message) {
     if (message?.kind === 'libp2p.statusUpdate') {
         applyStatusUpdate(message.payload);
@@ -550,6 +571,14 @@ async function init() {
             event.preventDefault();
             await dialLibp2pPeer();
         }
+    });
+
+    $('libp2p-auto-ping-toggle')?.addEventListener('change', async () => {
+        await updateAutoPing();
+    });
+
+    $('libp2p-auto-ping-interval')?.addEventListener('change', async () => {
+        await updateAutoPing();
     });
 }
 
