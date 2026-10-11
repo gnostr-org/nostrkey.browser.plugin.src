@@ -6,6 +6,24 @@ const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
 const AUTO_PING_STORAGE_KEY = 'experimental:libp2p-auto-ping';
 const LOG_LIMIT = 64;
 
+// 32-byte seed for the deterministic Ed25519 peer identity used by the
+// experimental libp2p node. The value is the SHA-256 digest of the empty
+// string: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
+const DETERMINISTIC_PEER_SEED_HEX = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+function hexToUint8Array(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+    }
+    return bytes;
+}
+
+async function getDeterministicPrivateKey() {
+    const { generateKeyPairFromSeed } = await import('@libp2p/crypto/keys');
+    return generateKeyPairFromSeed('Ed25519', hexToUint8Array(DETERMINISTIC_PEER_SEED_HEX));
+}
+
 // Canonical libp2p bootstrap peers (from a local `ipfs bootstrap list`).
 // These are handed to @libp2p/bootstrap for peer discovery; dnsaddr entries
 // are resolved by libp2p and the connection manager dials whichever resolved
@@ -360,7 +378,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
 
         try {
             const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap, gossipsub, webRTC, webRTCDirect, dcutr } = await loadLibp2pModules();
+            const privateKey = await getDeterministicPrivateKey();
             const node = await createLibp2p({
+                privateKey,
                 addresses: {
                     listen: [
                         '/p2p-circuit',
