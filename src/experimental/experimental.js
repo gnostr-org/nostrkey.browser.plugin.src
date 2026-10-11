@@ -33,6 +33,7 @@ const state = {
         pubsubPeers: [],
         subscribedTopics: [],
         pubsubMessages: [],
+        pingLog: [],
         autoPingEnabled: false,
         autoPingInterval: 1,
         lastDialTarget: '',
@@ -348,6 +349,23 @@ function renderLibp2p() {
             : '<div class="libp2p-log-empty">No pubsub messages yet.</div>';
     }
 
+    const pingLogEl = $('libp2p-ping-log');
+    if (pingLogEl) {
+        pingLogEl.innerHTML = state.libp2p.pingLog.length
+            ? state.libp2p.pingLog.map((entry) => `
+                <div class="libp2p-log-line ${entry.ok ? '' : 'libp2p-log-line--warn'}">
+                    <span class="libp2p-log-ts">${escapeHtml(entry.ts)}</span>
+                    <span class="libp2p-log-msg">${escapeHtml(entry.peer)} ${entry.ok ? `${entry.latency} ms` : `failed: ${entry.error}`}</span>
+                </div>
+            `).join('')
+            : '<div class="libp2p-log-empty">No pings yet. Connect to a peer and enable auto-ping, or press Ping all.</div>';
+    }
+
+    const pingAllBtn = $('libp2p-ping-all-btn');
+    if (pingAllBtn) {
+        pingAllBtn.disabled = !ready || starting || stopping;
+    }
+
     const pubsubErrorEl = $('libp2p-pubsub-error');
     if (pubsubErrorEl) {
         pubsubErrorEl.textContent = state.libp2p.lastPubsubError || '';
@@ -492,6 +510,10 @@ async function publishPubsubMessage() {
     await sendLibp2pMessage('libp2p.publishTopic', { topic, data });
 }
 
+async function pingAllPeersNow() {
+    await sendLibp2pMessage('libp2p.pingAll');
+}
+
 async function updateAutoPing() {
     const toggle = $('libp2p-auto-ping-toggle');
     const intervalInput = $('libp2p-auto-ping-interval');
@@ -575,6 +597,10 @@ async function init() {
 
     $('libp2p-auto-ping-toggle')?.addEventListener('change', async () => {
         await updateAutoPing();
+    });
+
+    $('libp2p-ping-all-btn')?.addEventListener('click', async () => {
+        await pingAllPeersNow();
     });
 
     $('libp2p-auto-ping-interval')?.addEventListener('change', async () => {

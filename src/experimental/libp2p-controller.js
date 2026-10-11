@@ -135,6 +135,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         pubsubPeers: [],
         subscribedTopics: [],
         pubsubMessages: [],
+        pingLog: [],
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
@@ -186,17 +187,24 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const remotePeer = connection?.remotePeer;
             if (!remotePeer) continue;
             const peerId = remotePeer.toString();
+            const shortPeer = shortValue(peerId, 14, 10);
             try {
                 const pingStart = performance.now();
                 for await (const _ of pingService.ping(remotePeer)) {
                     const latency = Math.max(0, Math.round(performance.now() - pingStart));
-                    pushLog(`Auto-ping ${shortValue(peerId, 14, 10)}: ${latency} ms`);
+                    const entry = { ts: new Date().toISOString(), peer: shortPeer, peerId, latency, ok: true };
+                    state.pingLog = [...state.pingLog, entry].slice(-16);
+                    pushLog(`Auto-ping ${shortPeer}: ${latency} ms`);
                     break;
                 }
             } catch (error) {
-                pushLog(`Auto-ping failed for ${shortValue(peerId, 14, 10)}: ${error instanceof Error ? error.message : String(error)}`, 'warn');
+                const message = error instanceof Error ? error.message : String(error);
+                const entry = { ts: new Date().toISOString(), peer: shortPeer, peerId, latency: null, ok: false, error: message };
+                state.pingLog = [...state.pingLog, entry].slice(-16);
+                pushLog(`Auto-ping failed for ${shortPeer}: ${message}`, 'warn');
             }
         }
+        updateStatus({ pingLog: state.pingLog });
     }
 
     function startAutoPing() {
@@ -597,6 +605,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         }
     }
 
+    async function pingAllConnectedPeers() {
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        await pingAllPeers();
+        return { success: true, status: getStatus() };
+    }
+
     async function setAutoPing({ enabled, interval }) {
         const nextEnabled = Boolean(enabled);
         const nextInterval = Math.max(1, Math.min(3600, Math.floor(Number(interval) || 1)));
@@ -864,6 +879,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             pubsubPeers: [...state.pubsubPeers],
             subscribedTopics: [...state.subscribedTopics],
             pubsubMessages: [...state.pubsubMessages],
+            pingLog: [...state.pingLog],
             lastDialTarget: state.lastDialTarget,
             lastDialPeer: state.lastDialPeer,
             lastPingLatency: state.lastPingLatency,
@@ -883,6 +899,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         dialPeer,
         setBootstrapAddrs,
         setAutoPing,
+        pingAllConnectedPeers,
         subscribeTopic,
         unsubscribeTopic,
         publishTopic,

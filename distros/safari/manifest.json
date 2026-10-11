@@ -3,7 +3,7 @@
   "default_locale": "en",
   "name": "__MSG_extension_name__",
   "description": "__MSG_extension_description__",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "short_name": "GnostrKey",
   "author": "gnostr",
   "homepage_url": "https://gnostr.org",
