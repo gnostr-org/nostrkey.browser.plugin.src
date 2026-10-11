@@ -318,6 +318,31 @@ async function ensureLibp2pNode() {
         state.libp2p.starting = false;
         renderLibp2p();
     }
+
+    async function loadSavedLibp2pBinding() {
+        try {
+            const stored = await api.storage.local.get({
+                'experimental:libp2p-binding': null,
+            });
+            const saved = stored['experimental:libp2p-binding'];
+            if (!saved || typeof saved !== 'object') return;
+
+            state.libp2p.attestation = saved.attestation || null;
+            state.libp2p.activePubkey = saved.activePubkey || '';
+            state.libp2p.activeNpub = saved.activeNpub || '';
+            if (saved.peerId) {
+                state.libp2p.peerId = saved.peerId;
+                state.libp2p.peerIdShort = shortValue(saved.peerId, 14, 10);
+            }
+            if (saved.attestation?.binding?.peerId && !state.libp2p.peerId) {
+                state.libp2p.peerId = saved.attestation.binding.peerId;
+                state.libp2p.peerIdShort = shortValue(saved.attestation.binding.peerId, 14, 10);
+            }
+            renderLibp2p();
+        } catch (error) {
+            console.warn('Failed to restore libp2p binding:', error);
+        }
+    }
 }
 
 async function stopLibp2pNode() {
@@ -446,6 +471,15 @@ async function bindLibp2pIdentity() {
             binding: payload,
         };
 
+        await api.storage.local.set({
+            'experimental:libp2p-binding': {
+                attestation: state.libp2p.attestation,
+                activePubkey: state.libp2p.activePubkey,
+                activeNpub: state.libp2p.activeNpub,
+                peerId: state.libp2p.peerId,
+            },
+        });
+
         pushLibp2pLog(`Bound ${npub} to peer ${state.libp2p.peerId}`);
         pushLibp2pLog(`Attestation signed as event ${attestation.id}`);
         renderLibp2p();
@@ -483,6 +517,7 @@ function renderLibp2pSection() {
 
 async function init() {
     await reloadFeatures();
+    await loadSavedLibp2pBinding();
     renderLibp2pSection();
 
     $('libp2p-start-btn')?.addEventListener('click', async () => {
