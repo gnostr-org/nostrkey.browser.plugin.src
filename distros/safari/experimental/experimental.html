@@ -70,6 +70,8 @@
                             <ul class="exp-capabilities">
                                 <li>Use circuit relays to reach other peers</li>
                                 <li>Dial out to WSS bootstrap peers and discovered nodes</li>
+                                <li>Listen on WebRTC addresses and attempt NAT hole punching</li>
+                                <li>Upgrade relayed connections to direct WebRTC via DCUtR</li>
                                 <li>Participate in gossipsub meshes and relay messages</li>
                                 <li>Sign a Nostr attestation binding the active identity to its peer ID</li>
                             </ul>
@@ -164,6 +166,11 @@
                         <div class="exp-field">
                             <div class="exp-label">Advertised listen addresses</div>
                             <pre id="libp2p-listen-addrs" class="exp-pre">No advertised listen addresses in this browser node.</pre>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">WebRTC listen addresses (hole punching)</div>
+                            <pre id="libp2p-webrtc-addrs" class="exp-pre">No WebRTC listen addresses yet (requires a relay reservation).</pre>
                         </div>
 
                         <div class="exp-field">

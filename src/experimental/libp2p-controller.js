@@ -129,6 +129,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         discoveryBootstrapAddrs: [...DEFAULT_LIBP2P_BOOTSTRAP],
         bootstrapAddrs: [],
         listenAddrs: [],
+        webrtcAddrs: [],
         connectionCount: 0,
         pubsubPeers: [],
         subscribedTopics: [],
@@ -155,6 +156,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 return;
             }
             state.connectionCount = state.node.getConnections().length;
+            state.listenAddrs = state.node.getMultiaddrs().map((addr) => addr.toString());
+            state.webrtcAddrs = state.listenAddrs.filter((addr) => addr.includes('/webrtc'));
             refreshPubsubPeers();
             broadcastStatus();
         }, 3000);
@@ -198,6 +201,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             identifyModule,
             bootstrapModule,
             gossipsubModule,
+            webrtcModule,
+            dcutrModule,
         ] = await Promise.all([
             import('libp2p'),
             import('@libp2p/websockets'),
@@ -208,6 +213,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             import('@libp2p/identify'),
             import('@libp2p/bootstrap'),
             import('@libp2p/gossipsub'),
+            import('@libp2p/webrtc'),
+            import('@libp2p/dcutr'),
         ]);
         libp2pModules = {
             createLibp2p: libp2pModule.createLibp2p,
@@ -219,6 +226,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             identify: identifyModule.identify,
             bootstrap: bootstrapModule.bootstrap,
             gossipsub: gossipsubModule.gossipsub,
+            webRTC: webrtcModule.webRTC,
+            webRTCDirect: webrtcModule.webRTCDirect,
+            dcutr: dcutrModule.dcutr,
         };
         return libp2pModules;
     }
@@ -293,10 +303,15 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         updateStatus({ starting: true, lastError: '' });
 
         try {
-            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap, gossipsub } = await loadLibp2pModules();
+            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap, gossipsub, webRTC, webRTCDirect, dcutr } = await loadLibp2pModules();
             const node = await createLibp2p({
-                addresses: { listen: [] },
-                transports: [webSockets(), circuitRelayTransport()],
+                addresses: {
+                    listen: [
+                        '/p2p-circuit',
+                        '/webrtc',
+                    ],
+                },
+                transports: [webSockets(), webRTC(), webRTCDirect(), circuitRelayTransport()],
                 connectionEncryption: [noise()],
                 streamMuxers: [yamux()],
                 services: {
@@ -306,6 +321,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                         allowPublishToZeroTopicPeers: true,
                         emitSelf: true,
                     }),
+                    dcutr: dcutr(),
                 },
                 peerDiscovery: [
                     bootstrap({
@@ -327,6 +343,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             state.peerId = peerId;
             state.peerIdShort = shortValue(peerId, 14, 10);
             state.listenAddrs = node.getMultiaddrs().map((addr) => addr.toString());
+            state.webrtcAddrs = node.getMultiaddrs()
+                .map((addr) => addr.toString())
+                .filter((addr) => addr.includes('/webrtc'));
             state.connectionCount = node.getConnections().length;
             state.lastError = '';
             rebuildRelayDescriptor();
@@ -386,6 +405,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 peerId: '',
                 peerIdShort: '',
                 listenAddrs: [],
+                webrtcAddrs: [],
                 connectionCount: 0,
                 pubsubPeers: [],
                 subscribedTopics: [],
@@ -746,6 +766,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             discoveryBootstrapAddrs: [...state.discoveryBootstrapAddrs],
             bootstrapAddrs: [...state.bootstrapAddrs],
             listenAddrs: [...state.listenAddrs],
+            webrtcAddrs: [...state.webrtcAddrs],
             connectionCount: state.connectionCount,
             pubsubPeers: [...state.pubsubPeers],
             subscribedTopics: [...state.subscribedTopics],

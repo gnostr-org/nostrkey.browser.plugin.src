@@ -28,6 +28,7 @@ const state = {
         discoveryBootstrapAddrs: [],
         bootstrapAddrs: [],
         listenAddrs: [],
+        webrtcAddrs: [],
         connectionCount: 0,
         pubsubPeers: [],
         subscribedTopics: [],
@@ -161,6 +162,13 @@ function renderLibp2p() {
     const listenAddrsEl = $('libp2p-listen-addrs');
     if (listenAddrsEl) {
         listenAddrsEl.textContent = listenAddrs.length ? listenAddrs.join('\n') : 'No advertised listen addresses in this browser node.';
+    }
+
+    const webrtcAddrsEl = $('libp2p-webrtc-addrs');
+    if (webrtcAddrsEl) {
+        webrtcAddrsEl.textContent = state.libp2p.webrtcAddrs.length
+            ? state.libp2p.webrtcAddrs.join('\n')
+            : 'No WebRTC listen addresses yet (requires a relay reservation).';
     }
 
     const defaultBootstrapEl = $('libp2p-default-bootstrap');
