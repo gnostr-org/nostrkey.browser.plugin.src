@@ -144,6 +144,28 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
     };
 
     let libp2pModules = null;
+    let statusInterval = null;
+
+    function startStatusRefresh() {
+        if (statusInterval) return;
+        statusInterval = setInterval(() => {
+            if (!state.node) {
+                clearInterval(statusInterval);
+                statusInterval = null;
+                return;
+            }
+            state.connectionCount = state.node.getConnections().length;
+            refreshPubsubPeers();
+            broadcastStatus();
+        }, 3000);
+    }
+
+    function stopStatusRefresh() {
+        if (statusInterval) {
+            clearInterval(statusInterval);
+            statusInterval = null;
+        }
+    }
 
     function pushLog(message, kind = 'info') {
         const ts = new Date().toISOString();
@@ -219,15 +241,27 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         };
     }
 
+    function refreshPubsubPeers() {
+        const pubsub = state.node?.services?.pubsub;
+        if (!pubsub) return;
+        try {
+            state.pubsubPeers = pubsub.getPeers().map((p) => p.toString());
+        } catch (_) {
+            // ignore
+        }
+    }
+
     function attachNodeListeners(node) {
         node.addEventListener('peer:connect', (event) => {
             const remotePeer = event.detail?.toString?.() || String(event.detail || '');
             state.connectionCount = node.getConnections().length;
+            refreshPubsubPeers();
             pushLog(`Peer connected: ${remotePeer}`);
         });
         node.addEventListener('peer:disconnect', (event) => {
             const remotePeer = event.detail?.toString?.() || String(event.detail || '');
             state.connectionCount = node.getConnections().length;
+            refreshPubsubPeers();
             pushLog(`Peer disconnected: ${remotePeer}`);
         });
     }
@@ -242,8 +276,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const from = msg.from?.toString?.() || '';
             const entry = { ts: new Date().toISOString(), topic, from: shortValue(from, 14, 10), data };
             state.pubsubMessages = [...state.pubsubMessages, entry].slice(-32);
+            refreshPubsubPeers();
             pushLog(`Pubsub message on '${topic}' from ${entry.from}: ${data}`);
-            updateStatus({ pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+            updateStatus({ pubsubPeers: state.pubsubPeers });
+        });
+        pubsub.addEventListener('subscription-change', () => {
+            refreshPubsubPeers();
+            updateStatus({ pubsubPeers: state.pubsubPeers });
         });
     }
 
@@ -280,6 +319,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             await node.start();
             attachNodeListeners(node);
             attachPubsubListeners(node);
+            startStatusRefresh();
 
             const peerId = node.peerId?.toString?.() || String(node.peerId || '');
             state.node = node;
@@ -339,6 +379,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             state.lastError = message;
             pushLog(`Stop failed: ${message}`, 'error');
         } finally {
+            stopStatusRefresh();
             updateStatus({
                 ready: false,
                 stopping: false,
@@ -346,6 +387,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 peerIdShort: '',
                 listenAddrs: [],
                 connectionCount: 0,
+                pubsubPeers: [],
+                subscribedTopics: [],
                 lastDialTarget: '',
                 lastDialPeer: '',
                 lastPingLatency: '',
@@ -486,8 +529,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const topics = pubsub.getTopics();
             state.subscribedTopics = topics;
             state.lastPubsubError = '';
+            refreshPubsubPeers();
             pushLog(`Subscribed to pubsub topic '${topic}'`);
-            updateStatus({ subscribedTopics: topics, pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+            updateStatus({ subscribedTopics: topics, pubsubPeers: state.pubsubPeers });
             return { success: true, status: getStatus() };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -537,8 +581,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         try {
             const result = await pubsub.publish(topic, new TextEncoder().encode(payload));
             state.lastPubsubError = '';
+            refreshPubsubPeers();
             pushLog(`Published to '${topic}' (${result.recipients.length} recipient(s))`);
-            updateStatus({ pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+            updateStatus({ pubsubPeers: state.pubsubPeers });
             return { success: true, status: getStatus() };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
