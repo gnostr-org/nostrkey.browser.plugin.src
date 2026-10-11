@@ -25,6 +25,7 @@ const state = {
         attestation: null,
         relayDescriptor: null,
         defaultBootstrapAddrs: [],
+        discoveryBootstrapAddrs: [],
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
@@ -163,7 +164,14 @@ function renderLibp2p() {
     if (defaultBootstrapEl) {
         defaultBootstrapEl.textContent = defaultBootstrapAddrs.length
             ? defaultBootstrapAddrs.join('\n')
-            : 'No default IPFS bootstrap relays configured.';
+            : 'No default WSS bootstrap relays configured.';
+    }
+
+    const discoveryBootstrapEl = $('libp2p-discovery-bootstrap');
+    if (discoveryBootstrapEl) {
+        discoveryBootstrapEl.textContent = state.libp2p.discoveryBootstrapAddrs.length
+            ? state.libp2p.discoveryBootstrapAddrs.join('\n')
+            : 'No canonical libp2p bootstrap relays configured.';
     }
 
     const connectionCountEl = $('libp2p-connection-count');

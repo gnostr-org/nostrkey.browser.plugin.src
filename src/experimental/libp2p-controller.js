@@ -126,6 +126,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         attestation: null,
         relayDescriptor: null,
         defaultBootstrapAddrs: [...DEFAULT_WSS_BOOTSTRAP],
+        discoveryBootstrapAddrs: [...DEFAULT_LIBP2P_BOOTSTRAP],
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
@@ -563,6 +564,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             }
 
             state.defaultBootstrapAddrs = [...DEFAULT_WSS_BOOTSTRAP];
+            state.discoveryBootstrapAddrs = [...DEFAULT_LIBP2P_BOOTSTRAP];
             const bootstrap = stored[BOOTSTRAP_STORAGE_KEY];
             state.bootstrapAddrs = Array.isArray(bootstrap)
                 ? bootstrap.filter((addr) => typeof addr === 'string' && addr.trim())
@@ -591,6 +593,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             attestation: state.attestation,
             relayDescriptor: state.relayDescriptor,
             defaultBootstrapAddrs: [...state.defaultBootstrapAddrs],
+            discoveryBootstrapAddrs: [...state.discoveryBootstrapAddrs],
             bootstrapAddrs: [...state.bootstrapAddrs],
             listenAddrs: [...state.listenAddrs],
             connectionCount: state.connectionCount,
