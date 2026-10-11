@@ -171,6 +171,19 @@
     color: var(--ins-muted);
 }
 
+.exp-capabilities {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    font-family: var(--ins-font-ui);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--ins-text);
+}
+
+.exp-capabilities li {
+    margin: 0;
+}
+
 /* Start / Stop node buttons */
 .button--start {
     background: rgba(34, 197, 94, 0.12);

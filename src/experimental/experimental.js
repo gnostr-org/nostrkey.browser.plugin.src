@@ -29,6 +29,9 @@ const state = {
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
+        pubsubPeers: [],
+        subscribedTopics: [],
+        pubsubMessages: [],
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
@@ -308,6 +311,63 @@ function renderLibp2p() {
         }
         bootstrapInput.disabled = !ready || starting || stopping;
     }
+
+    const pubsubPeersEl = $('libp2p-pubsub-peers');
+    if (pubsubPeersEl) {
+        pubsubPeersEl.textContent = state.libp2p.pubsubPeers.length
+            ? state.libp2p.pubsubPeers.join('\n')
+            : 'No pubsub peers yet.';
+    }
+
+    const subscribedTopicsEl = $('libp2p-subscribed-topics');
+    if (subscribedTopicsEl) {
+        subscribedTopicsEl.textContent = state.libp2p.subscribedTopics.length
+            ? state.libp2p.subscribedTopics.join('\n')
+            : 'Not subscribed to any topics.';
+    }
+
+    const pubsubMessagesEl = $('libp2p-pubsub-messages');
+    if (pubsubMessagesEl) {
+        pubsubMessagesEl.innerHTML = state.libp2p.pubsubMessages.length
+            ? state.libp2p.pubsubMessages.map((entry) => `
+                <div class="libp2p-log-line">
+                    <span class="libp2p-log-ts">${escapeHtml(entry.ts)}</span>
+                    <span class="libp2p-log-msg">[${escapeHtml(entry.topic)}] ${escapeHtml(entry.from)}: ${escapeHtml(entry.data)}</span>
+                </div>
+            `).join('')
+            : '<div class="libp2p-log-empty">No pubsub messages yet.</div>';
+    }
+
+    const pubsubErrorEl = $('libp2p-pubsub-error');
+    if (pubsubErrorEl) {
+        pubsubErrorEl.textContent = state.libp2p.lastPubsubError || '';
+        pubsubErrorEl.classList.toggle('hidden', !state.libp2p.lastPubsubError);
+    }
+
+    const subscribeBtn = $('libp2p-subscribe-btn');
+    if (subscribeBtn) {
+        subscribeBtn.disabled = !ready || starting || stopping;
+    }
+
+    const unsubscribeBtn = $('libp2p-unsubscribe-btn');
+    if (unsubscribeBtn) {
+        unsubscribeBtn.disabled = !ready || starting || stopping;
+    }
+
+    const publishBtn = $('libp2p-publish-btn');
+    if (publishBtn) {
+        publishBtn.disabled = !ready || starting || stopping;
+    }
+
+    const topicInput = $('libp2p-topic-input');
+    if (topicInput) {
+        topicInput.disabled = !ready || starting || stopping;
+    }
+
+    const publishInput = $('libp2p-publish-input');
+    if (publishInput) {
+        publishInput.disabled = !ready || starting || stopping;
+    }
 }
 
 async function startLibp2pNode() {
@@ -376,6 +436,41 @@ async function copyRelayDescriptor() {
     await api.runtime.sendMessage({ kind: 'copy', payload: text });
 }
 
+async function subscribePubsubTopic() {
+    const input = $('libp2p-topic-input');
+    const topic = input?.value.trim();
+    if (!topic) {
+        state.libp2p.lastPubsubError = 'Enter a topic first.';
+        renderLibp2p();
+        return;
+    }
+    await sendLibp2pMessage('libp2p.subscribeTopic', topic);
+}
+
+async function unsubscribePubsubTopic() {
+    const input = $('libp2p-topic-input');
+    const topic = input?.value.trim();
+    if (!topic) {
+        state.libp2p.lastPubsubError = 'Enter a topic first.';
+        renderLibp2p();
+        return;
+    }
+    await sendLibp2pMessage('libp2p.unsubscribeTopic', topic);
+}
+
+async function publishPubsubMessage() {
+    const topicInput = $('libp2p-topic-input');
+    const publishInput = $('libp2p-publish-input');
+    const topic = topicInput?.value.trim();
+    const data = publishInput?.value || '';
+    if (!topic) {
+        state.libp2p.lastPubsubError = 'Enter a topic first.';
+        renderLibp2p();
+        return;
+    }
+    await sendLibp2pMessage('libp2p.publishTopic', { topic, data });
+}
+
 function handleRuntimeMessage(message) {
     if (message?.kind === 'libp2p.statusUpdate') {
         applyStatusUpdate(message.payload);
@@ -421,6 +516,25 @@ async function init() {
 
     $('libp2p-clear-bind-btn')?.addEventListener('click', async () => {
         await clearLibp2pBinding();
+    });
+
+    $('libp2p-subscribe-btn')?.addEventListener('click', async () => {
+        await subscribePubsubTopic();
+    });
+
+    $('libp2p-unsubscribe-btn')?.addEventListener('click', async () => {
+        await unsubscribePubsubTopic();
+    });
+
+    $('libp2p-publish-btn')?.addEventListener('click', async () => {
+        await publishPubsubMessage();
+    });
+
+    $('libp2p-publish-input')?.addEventListener('keydown', async (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            await publishPubsubMessage();
+        }
     });
 
     $('libp2p-peer-input')?.addEventListener('keydown', async (event) => {

@@ -1160,6 +1160,15 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case 'libp2p.clearBinding':
             reply(sendResponse, () => libp2pController.clearBinding());
             return true;
+        case 'libp2p.subscribeTopic':
+            reply(sendResponse, () => libp2pController.subscribeTopic(message.payload));
+            return true;
+        case 'libp2p.unsubscribeTopic':
+            reply(sendResponse, () => libp2pController.unsubscribeTopic(message.payload));
+            return true;
+        case 'libp2p.publishTopic':
+            reply(sendResponse, () => libp2pController.publishTopic(message.payload.topic, message.payload.data));
+            return true;
 
         // --- Master password / lock handlers ---
         // NOTE: These use sendResponse + return true (callback pattern) because

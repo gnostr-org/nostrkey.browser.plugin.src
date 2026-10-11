@@ -130,11 +130,15 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
+        pubsubPeers: [],
+        subscribedTopics: [],
+        pubsubMessages: [],
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
         lastBindError: '',
         lastBootstrapError: '',
+        lastPubsubError: '',
         lastError: '',
         logs: [],
     };
@@ -171,6 +175,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             circuitRelayModule,
             identifyModule,
             bootstrapModule,
+            gossipsubModule,
         ] = await Promise.all([
             import('libp2p'),
             import('@libp2p/websockets'),
@@ -180,6 +185,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             import('@libp2p/circuit-relay-v2'),
             import('@libp2p/identify'),
             import('@libp2p/bootstrap'),
+            import('@libp2p/gossipsub'),
         ]);
         libp2pModules = {
             createLibp2p: libp2pModule.createLibp2p,
@@ -190,6 +196,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             circuitRelayTransport: circuitRelayModule.circuitRelayTransport,
             identify: identifyModule.identify,
             bootstrap: bootstrapModule.bootstrap,
+            gossipsub: gossipsubModule.gossipsub,
         };
         return libp2pModules;
     }
@@ -225,6 +232,21 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         });
     }
 
+    function attachPubsubListeners(node) {
+        const pubsub = node.services?.pubsub;
+        if (!pubsub) return;
+        pubsub.addEventListener('message', (event) => {
+            const msg = event.detail;
+            const topic = msg.topic || '';
+            const data = msg.data ? new TextDecoder().decode(msg.data) : '';
+            const from = msg.from?.toString?.() || '';
+            const entry = { ts: new Date().toISOString(), topic, from: shortValue(from, 14, 10), data };
+            state.pubsubMessages = [...state.pubsubMessages, entry].slice(-32);
+            pushLog(`Pubsub message on '${topic}' from ${entry.from}: ${data}`);
+            updateStatus({ pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+        });
+    }
+
     async function startNode() {
         if (state.node) return { success: true, status: getStatus() };
         if (state.starting) return { success: true, status: getStatus() };
@@ -232,7 +254,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         updateStatus({ starting: true, lastError: '' });
 
         try {
-            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap } = await loadLibp2pModules();
+            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap, gossipsub } = await loadLibp2pModules();
             const node = await createLibp2p({
                 addresses: { listen: [] },
                 transports: [webSockets(), circuitRelayTransport()],
@@ -241,6 +263,10 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 services: {
                     ping: ping(),
                     identify: identify(),
+                    pubsub: gossipsub({
+                        allowPublishToZeroTopicPeers: true,
+                        emitSelf: true,
+                    }),
                 },
                 peerDiscovery: [
                     bootstrap({
@@ -253,6 +279,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
 
             await node.start();
             attachNodeListeners(node);
+            attachPubsubListeners(node);
 
             const peerId = node.peerId?.toString?.() || String(node.peerId || '');
             state.node = node;
@@ -444,6 +471,84 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         }
     }
 
+    async function subscribeTopic(topic) {
+        if (!topic || typeof topic !== 'string') {
+            return { success: false, error: 'Enter a topic first.', status: getStatus() };
+        }
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        const pubsub = state.node?.services?.pubsub;
+        if (!pubsub) {
+            return { success: false, error: 'Pubsub service unavailable.', status: getStatus() };
+        }
+        try {
+            pubsub.subscribe(topic);
+            const topics = pubsub.getTopics();
+            state.subscribedTopics = topics;
+            state.lastPubsubError = '';
+            pushLog(`Subscribed to pubsub topic '${topic}'`);
+            updateStatus({ subscribedTopics: topics, pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastPubsubError = message;
+            pushLog(`Subscribe failed: ${message}`, 'error');
+            updateStatus({});
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
+    async function unsubscribeTopic(topic) {
+        if (!topic || typeof topic !== 'string') {
+            return { success: false, error: 'Enter a topic first.', status: getStatus() };
+        }
+        const pubsub = state.node?.services?.pubsub;
+        if (!pubsub) {
+            return { success: false, error: 'Pubsub service unavailable.', status: getStatus() };
+        }
+        try {
+            pubsub.unsubscribe(topic);
+            const topics = pubsub.getTopics();
+            state.subscribedTopics = topics;
+            state.lastPubsubError = '';
+            pushLog(`Unsubscribed from pubsub topic '${topic}'`);
+            updateStatus({ subscribedTopics: topics });
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastPubsubError = message;
+            pushLog(`Unsubscribe failed: ${message}`, 'error');
+            updateStatus({});
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
+    async function publishTopic(topic, data) {
+        if (!topic || typeof topic !== 'string') {
+            return { success: false, error: 'Enter a topic first.', status: getStatus() };
+        }
+        const payload = typeof data === 'string' ? data : '';
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        const pubsub = state.node?.services?.pubsub;
+        if (!pubsub) {
+            return { success: false, error: 'Pubsub service unavailable.', status: getStatus() };
+        }
+        try {
+            const result = await pubsub.publish(topic, new TextEncoder().encode(payload));
+            state.lastPubsubError = '';
+            pushLog(`Published to '${topic}' (${result.recipients.length} recipient(s))`);
+            updateStatus({ pubsubPeers: pubsub.getPeers().map((p) => p.toString()) });
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            state.lastPubsubError = message;
+            pushLog(`Publish failed: ${message}`, 'error');
+            updateStatus({});
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
     async function bindIdentity() {
         const startResult = await startNode();
         if (!startResult.success) return startResult;
@@ -597,11 +702,15 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             bootstrapAddrs: [...state.bootstrapAddrs],
             listenAddrs: [...state.listenAddrs],
             connectionCount: state.connectionCount,
+            pubsubPeers: [...state.pubsubPeers],
+            subscribedTopics: [...state.subscribedTopics],
+            pubsubMessages: [...state.pubsubMessages],
             lastDialTarget: state.lastDialTarget,
             lastDialPeer: state.lastDialPeer,
             lastPingLatency: state.lastPingLatency,
             lastBindError: state.lastBindError,
             lastBootstrapError: state.lastBootstrapError,
+            lastPubsubError: state.lastPubsubError,
             lastError: state.lastError,
             logs: [...state.logs],
         };
@@ -612,6 +721,9 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         stopNode,
         dialPeer,
         setBootstrapAddrs,
+        subscribeTopic,
+        unsubscribeTopic,
+        publishTopic,
         bindIdentity,
         clearBinding,
         getStatus,

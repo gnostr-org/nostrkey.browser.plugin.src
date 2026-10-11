@@ -65,6 +65,16 @@
                             </div>
                         </div>
 
+                        <div class="exp-field">
+                            <div class="exp-label">Node capabilities</div>
+                            <ul class="exp-capabilities">
+                                <li>Use circuit relays to reach other peers</li>
+                                <li>Dial out to WSS bootstrap peers and discovered nodes</li>
+                                <li>Participate in gossipsub meshes and relay messages</li>
+                                <li>Sign a Nostr attestation binding the active identity to its peer ID</li>
+                            </ul>
+                        </div>
+
                         <div class="exp-actions">
                             <button id="libp2p-start-btn" class="button button--start flex-1" type="button">Start node</button>
                             <button id="libp2p-stop-btn" class="button button--stop flex-1" type="button">Stop node</button>
@@ -168,6 +178,58 @@
                         <div class="exp-field">
                             <div class="exp-label">Relay descriptor</div>
                             <pre id="libp2p-relay-descriptor" class="exp-pre">No relay descriptor yet.</pre>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">Pubsub</div>
+                            <div class="exp-status-grid exp-status-grid--compact">
+                                <div>
+                                    <div class="exp-label">Subscribed topics</div>
+                                    <pre id="libp2p-subscribed-topics" class="exp-pre">Not subscribed to any topics.</pre>
+                                </div>
+                                <div>
+                                    <div class="exp-label">Pubsub peers</div>
+                                    <pre id="libp2p-pubsub-peers" class="exp-pre">No pubsub peers yet.</pre>
+                                </div>
+                            </div>
+
+                            <label class="exp-field">
+                                <span class="exp-label">Topic</span>
+                                <input
+                                    id="libp2p-topic-input"
+                                    class="input"
+                                    type="text"
+                                    placeholder="nostr-events"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                            </label>
+
+                            <div class="exp-actions">
+                                <button id="libp2p-subscribe-btn" class="button button--secondary flex-1" type="button">Subscribe</button>
+                                <button id="libp2p-unsubscribe-btn" class="button button--secondary flex-1" type="button">Unsubscribe</button>
+                            </div>
+
+                            <label class="exp-field">
+                                <span class="exp-label">Message to publish</span>
+                                <input
+                                    id="libp2p-publish-input"
+                                    class="input"
+                                    type="text"
+                                    placeholder="hello mesh"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                            </label>
+
+                            <div class="exp-actions">
+                                <button id="libp2p-publish-btn" class="button button--secondary flex-1" type="button">Publish</button>
+                            </div>
+
+                            <div id="libp2p-pubsub-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
+
+                            <div class="exp-label">Received messages</div>
+                            <div id="libp2p-pubsub-messages" class="exp-log" aria-live="polite"></div>
                         </div>
 
                         <div class="exp-field">
