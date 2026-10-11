@@ -5,15 +5,34 @@ const BINDING_STORAGE_KEY = 'experimental:libp2p-binding';
 const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
 const LOG_LIMIT = 64;
 
-// Public IPFS bootstrap nodes that expose WSS. These are resolved from
-// _dnsaddr.bootstrap.libp2p.io TXT records. They may change over time; the
-// user can override or append via the custom bootstrap list in the UI.
-const DEFAULT_IPFS_BOOTSTRAP = [
+// Canonical libp2p bootstrap peers (from a local `ipfs bootstrap list`).
+// These are handed to @libp2p/bootstrap for peer discovery; dnsaddr entries
+// are resolved by libp2p and the connection manager dials whichever resolved
+// transports the browser supports (WSS in this extension's case).
+const DEFAULT_LIBP2P_BOOTSTRAP = [
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+    '/dnsaddr/va1.bootstrap.libp2p.io/p2p/12D3KooWKnDdG3iXw9eTFijk3EWSunZcFi54Zka4wmtqtt6rPxc8',
+    '/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ',
+    '/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ',
+];
+
+// Browser-safe WSS endpoints for the same canonical bootstrap peers. These
+// are used for the explicit fast-path dial loop because raw TCP/QUIC and
+// unresolved dnsaddr addresses cannot be dialled directly in a browser
+// extension context.
+const DEFAULT_WSS_BOOTSTRAP = [
     '/dns4/lith-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
     '/dns4/chic-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
     '/dns4/sing-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
     '/dns4/chic-1-b.bootstrap.ipni.io/tcp/4453/wss/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
 ];
+
+function isBrowserDialable(addr) {
+    return typeof addr === 'string' && (addr.includes('/wss/') || addr.includes('/ws/'));
+}
 
 function shortValue(value, head = 10, tail = 8) {
     if (!value) return '';
@@ -35,7 +54,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         activeNpub: '',
         attestation: null,
         relayDescriptor: null,
-        defaultBootstrapAddrs: [...DEFAULT_IPFS_BOOTSTRAP],
+        defaultBootstrapAddrs: [...DEFAULT_WSS_BOOTSTRAP],
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
@@ -79,6 +98,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             pingModule,
             circuitRelayModule,
             identifyModule,
+            bootstrapModule,
         ] = await Promise.all([
             import('libp2p'),
             import('@libp2p/websockets'),
@@ -87,6 +107,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             import('@libp2p/ping'),
             import('@libp2p/circuit-relay-v2'),
             import('@libp2p/identify'),
+            import('@libp2p/bootstrap'),
         ]);
         libp2pModules = {
             createLibp2p: libp2pModule.createLibp2p,
@@ -96,6 +117,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             ping: pingModule.ping,
             circuitRelayTransport: circuitRelayModule.circuitRelayTransport,
             identify: identifyModule.identify,
+            bootstrap: bootstrapModule.bootstrap,
         };
         return libp2pModules;
     }
@@ -138,7 +160,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         updateStatus({ starting: true, lastError: '' });
 
         try {
-            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify } = await loadLibp2pModules();
+            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport, identify, bootstrap } = await loadLibp2pModules();
             const node = await createLibp2p({
                 addresses: { listen: [] },
                 transports: [webSockets(), circuitRelayTransport()],
@@ -148,6 +170,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                     ping: ping(),
                     identify: identify(),
                 },
+                peerDiscovery: [
+                    bootstrap({
+                        list: DEFAULT_LIBP2P_BOOTSTRAP,
+                        timeout: 0,
+                        tagTTL: Infinity,
+                    }),
+                ],
             });
 
             await node.start();
@@ -281,7 +310,17 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         const node = state.node;
         if (!node) return { success: false, error: 'Node not started.' };
 
-        for (const addr of addrs) {
+        const dialable = addrs.filter((addr) => {
+            if (isBrowserDialable(addr)) return true;
+            pushLog(`Skipping non-browser bootstrap address: ${addr}`, 'warn');
+            return false;
+        });
+
+        if (!dialable.length) {
+            return { success: false, error: 'No browser-compatible (WS/WSS) bootstrap addresses.', status: getStatus() };
+        }
+
+        for (const addr of dialable) {
             pushLog(`Bootstrapping to ${addr}`);
             try {
                 await node.dial(multiaddr(addr));
@@ -297,7 +336,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 pushLog(`Bootstrap dial failed for ${addr}: ${message}`, 'warn');
             }
         }
-        return { success: false, error: `Failed to dial all ${addrs.length} bootstrap address(es).`, status: getStatus() };
+        return { success: false, error: `Failed to dial all ${dialable.length} browser-compatible bootstrap address(es).`, status: getStatus() };
     }
 
     async function setBootstrapAddrs(addrs) {
@@ -444,7 +483,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 pushLog('Restored libp2p binding from storage.');
             }
 
-            state.defaultBootstrapAddrs = [...DEFAULT_IPFS_BOOTSTRAP];
+            state.defaultBootstrapAddrs = [...DEFAULT_WSS_BOOTSTRAP];
             const bootstrap = stored[BOOTSTRAP_STORAGE_KEY];
             state.bootstrapAddrs = Array.isArray(bootstrap)
                 ? bootstrap.filter((addr) => typeof addr === 'string' && addr.trim())
