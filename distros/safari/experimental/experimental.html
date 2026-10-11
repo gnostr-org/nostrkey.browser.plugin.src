@@ -86,6 +86,11 @@
                             <button id="libp2p-dial-btn" class="button button--secondary flex-1" type="button">Dial and ping</button>
                         </div>
 
+                        <div class="exp-actions">
+                            <button id="libp2p-bind-btn" class="button button--primary flex-1" type="button">Bind active Nostr identity</button>
+                            <button id="libp2p-copy-bind-btn" class="button button--muted flex-1" type="button">Copy attestation</button>
+                        </div>
+
                         <div class="exp-status-grid exp-status-grid--compact">
                             <div>
                                 <div class="exp-label">Last dial target</div>
@@ -101,11 +106,32 @@
                             </div>
                         </div>
 
+                        <div class="exp-status-grid exp-status-grid--compact">
+                            <div>
+                                <div class="exp-label">Bound pubkey</div>
+                                <div id="libp2p-active-pubkey" class="exp-value exp-value--wrap">Not bound</div>
+                            </div>
+                            <div>
+                                <div class="exp-label">Bound npub</div>
+                                <div id="libp2p-active-npub" class="exp-value exp-value--wrap">Not bound</div>
+                            </div>
+                            <div>
+                                <div class="exp-label">Binding state</div>
+                                <div id="libp2p-bind-state" class="exp-value">Unbound</div>
+                            </div>
+                        </div>
+
                         <div id="libp2p-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
+                        <div id="libp2p-bind-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
 
                         <div class="exp-field">
                             <div class="exp-label">Advertised listen addresses</div>
                             <pre id="libp2p-listen-addrs" class="exp-pre">No advertised listen addresses in this browser node.</pre>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">Nostr attestation</div>
+                            <pre id="libp2p-attestation" class="exp-pre">No attestation yet.</pre>
                         </div>
 
                         <div class="exp-field">

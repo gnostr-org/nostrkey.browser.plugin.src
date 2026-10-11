@@ -1,4 +1,5 @@
 import { api } from '../utilities/browser-polyfill';
+import { nip19 } from 'nostr-crypto-utils';
 
 const FEATURES = [
     [
@@ -17,12 +18,18 @@ const state = {
         ready: false,
         starting: false,
         stopping: false,
+        binding: false,
         peerId: '',
+        peerIdShort: '',
+        activePubkey: '',
+        activeNpub: '',
+        attestation: null,
         listenAddrs: [],
         connectionCount: 0,
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
+        lastBindError: '',
         lastError: '',
         logs: [],
     },
@@ -44,6 +51,12 @@ function pushLibp2pLog(message, kind = 'info') {
         { ts, kind, message },
     ].slice(-12);
     renderLibp2p();
+}
+
+function shortValue(value, head = 10, tail = 8) {
+    if (!value) return '';
+    if (value.length <= head + tail + 3) return value;
+    return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
 function renderFeatures() {
@@ -90,12 +103,18 @@ function renderLibp2p() {
         ready,
         starting,
         stopping,
+        binding,
         peerId,
+        peerIdShort,
+        activePubkey,
+        activeNpub,
+        attestation,
         listenAddrs,
         connectionCount,
         lastDialTarget,
         lastDialPeer,
         lastPingLatency,
+        lastBindError,
         lastError,
         logs,
     } = state.libp2p;
@@ -113,7 +132,7 @@ function renderLibp2p() {
 
     const peerIdEl = $('libp2p-peer-id');
     if (peerIdEl) {
-        peerIdEl.textContent = peerId || 'Not started';
+        peerIdEl.textContent = peerIdShort || peerId || 'Not started';
     }
 
     const listenAddrsEl = $('libp2p-listen-addrs');
@@ -147,6 +166,36 @@ function renderLibp2p() {
         errorEl.classList.toggle('hidden', !lastError);
     }
 
+    const bindErrorEl = $('libp2p-bind-error');
+    if (bindErrorEl) {
+        bindErrorEl.textContent = lastBindError || '';
+        bindErrorEl.classList.toggle('hidden', !lastBindError);
+    }
+
+    const activePubkeyEl = $('libp2p-active-pubkey');
+    if (activePubkeyEl) {
+        activePubkeyEl.textContent = activePubkey ? shortValue(activePubkey, 16, 12) : 'Not bound';
+    }
+
+    const activeNpubEl = $('libp2p-active-npub');
+    if (activeNpubEl) {
+        activeNpubEl.textContent = activeNpub || 'Not bound';
+    }
+
+    const attestationEl = $('libp2p-attestation');
+    if (attestationEl) {
+        attestationEl.textContent = attestation ? JSON.stringify(attestation, null, 2) : 'No attestation yet.';
+    }
+
+    const bindStateEl = $('libp2p-bind-state');
+    if (bindStateEl) {
+        bindStateEl.textContent = binding
+            ? 'Binding…'
+            : attestation
+                ? 'Attested'
+                : 'Unbound';
+    }
+
     const logEl = $('libp2p-log');
     if (logEl) {
         logEl.innerHTML = logs.length
@@ -177,6 +226,16 @@ function renderLibp2p() {
     const peerInput = $('libp2p-peer-input');
     if (peerInput) {
         peerInput.disabled = !ready || starting || stopping;
+    }
+
+    const bindBtn = $('libp2p-bind-btn');
+    if (bindBtn) {
+        bindBtn.disabled = !ready || starting || stopping || binding;
+    }
+
+    const copyBindBtn = $('libp2p-copy-bind-btn');
+    if (copyBindBtn) {
+        copyBindBtn.disabled = !attestation;
     }
 }
 
@@ -237,6 +296,7 @@ async function ensureLibp2pNode() {
         state.libp2p.node = node;
         state.libp2p.ready = true;
         state.libp2p.peerId = node.peerId?.toString?.() || String(node.peerId || '');
+        state.libp2p.peerIdShort = shortValue(state.libp2p.peerId, 14, 10);
         state.libp2p.listenAddrs = node.getMultiaddrs().map((addr) => addr.toString());
         state.libp2p.connectionCount = node.getConnections().length;
         state.libp2p.lastError = '';
@@ -247,6 +307,7 @@ async function ensureLibp2pNode() {
         state.libp2p.ready = false;
         state.libp2p.node = null;
         state.libp2p.peerId = '';
+        state.libp2p.peerIdShort = '';
         state.libp2p.listenAddrs = [];
         state.libp2p.connectionCount = 0;
         state.libp2p.lastError = error instanceof Error ? error.message : String(error);
@@ -277,6 +338,7 @@ async function stopLibp2pNode() {
     } finally {
         state.libp2p.ready = false;
         state.libp2p.peerId = '';
+        state.libp2p.peerIdShort = '';
         state.libp2p.listenAddrs = [];
         state.libp2p.connectionCount = 0;
         state.libp2p.lastDialTarget = '';
@@ -338,6 +400,80 @@ async function dialLibp2pPeer() {
     }
 }
 
+async function bindLibp2pIdentity() {
+    await ensureLibp2pNode();
+    state.libp2p.binding = true;
+    state.libp2p.lastBindError = '';
+    renderLibp2p();
+
+    try {
+        const rawPubkey = await api.runtime.sendMessage({ kind: 'getPubKey' });
+        if (typeof rawPubkey !== 'string' || !rawPubkey) {
+            throw new Error('Unable to read the active Nostr pubkey.');
+        }
+
+        const npub = nip19.npubEncode(rawPubkey);
+        const payload = {
+            peerId: state.libp2p.peerId,
+            listenAddrs: state.libp2p.listenAddrs,
+            protocol: 'nostrkey-libp2p-experiment',
+            createdAt: new Date().toISOString(),
+            note: 'Nostr-authenticated libp2p node binding',
+        };
+
+        const unsigned = {
+            kind: 31337,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [
+                ['d', 'libp2p-binding'],
+                ['peer', state.libp2p.peerId],
+                ...state.libp2p.listenAddrs.map((addr) => ['relay', addr]),
+            ],
+            content: JSON.stringify(payload),
+            pubkey: rawPubkey,
+        };
+
+        pushLibp2pLog(`Requesting a Nostr signature from ${npub}`);
+        const attestation = await api.runtime.sendMessage({ kind: 'signEvent', payload: unsigned });
+        if (!attestation || typeof attestation !== 'object') {
+            throw new Error('No attestation returned from the signer.');
+        }
+
+        state.libp2p.activePubkey = rawPubkey;
+        state.libp2p.activeNpub = npub;
+        state.libp2p.attestation = {
+            ...attestation,
+            binding: payload,
+        };
+
+        pushLibp2pLog(`Bound ${npub} to peer ${state.libp2p.peerId}`);
+        pushLibp2pLog(`Attestation signed as event ${attestation.id}`);
+        renderLibp2p();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        state.libp2p.lastBindError = message;
+        pushLibp2pLog(`Bind failed: ${message}`, 'error');
+        renderLibp2p();
+        throw error;
+    } finally {
+        state.libp2p.binding = false;
+        renderLibp2p();
+    }
+}
+
+async function copyLibp2pBinding() {
+    const payload = state.libp2p.attestation;
+    if (!payload) return;
+    const text = JSON.stringify(payload, null, 2);
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        pushLibp2pLog('Attestation copied to clipboard.');
+        return;
+    }
+    await api.runtime.sendMessage({ kind: 'copy', payload: text });
+    pushLibp2pLog('Attestation copied via extension clipboard helper.');
+}
+
 function renderLibp2pSection() {
     const statusMount = $('libp2p-status');
     if (statusMount) {
@@ -361,6 +497,14 @@ async function init() {
 
     $('libp2p-dial-btn')?.addEventListener('click', async () => {
         await dialLibp2pPeer();
+    });
+
+    $('libp2p-bind-btn')?.addEventListener('click', async () => {
+        await bindLibp2pIdentity();
+    });
+
+    $('libp2p-copy-bind-btn')?.addEventListener('click', async () => {
+        await copyLibp2pBinding();
     });
 
     $('libp2p-peer-input')?.addEventListener('keydown', async (event) => {
