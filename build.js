@@ -13,6 +13,8 @@ const SAFARI_DIST = './distros/safari';
 const CHROME_DIST = './distros/chrome';
 const FIREFOX_DIST = './distros/firefox';
 
+const MANIFEST_VERSION = JSON.parse(fs.readFileSync(path.join(SRC, 'manifest.json'), 'utf8')).version;
+
 const entryPoints = {
     'background.build': `${SRC}/background.js`,
     'content.build': `${SRC}/content.js`,
@@ -190,14 +192,17 @@ async function buildChrome(opts = {}) {
 
     copyStaticAssets(CHROME_DIST);
 
-    // Chrome-specific manifest
-    fs.copyFileSync(path.join(SRC, 'chrome-manifest.json'), path.join(CHROME_DIST, 'manifest.json'));
+    // Chrome-specific manifest — keep its structure but use the canonical version.
+    const chromeManifest = JSON.parse(fs.readFileSync(path.join(SRC, 'chrome-manifest.json'), 'utf8'));
+    chromeManifest.version = MANIFEST_VERSION;
+    fs.writeFileSync(path.join(CHROME_DIST, 'manifest.json'), JSON.stringify(chromeManifest, null, 2));
 
     // Zip for Chrome Web Store upload
-    const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-    const zipName = `nostrkey-chrome-v${pkg.version}.zip`;
+    const zipName = `nostrkey-chrome-v${MANIFEST_VERSION}.zip`;
     const zipPath = path.join('./distros', zipName);
-    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    for (const oldZip of fs.readdirSync('./distros').filter(f => f.startsWith('nostrkey-chrome-') && f.endsWith('.zip'))) {
+        fs.unlinkSync(path.join('./distros', oldZip));
+    }
     execSync(`cd ${CHROME_DIST} && zip -r ../${zipName} . -x '.*'`);
 
     console.log(`Chrome build complete → ${CHROME_DIST}/`);
@@ -218,14 +223,17 @@ async function buildFirefox(opts = {}) {
 
     copyStaticAssets(FIREFOX_DIST);
 
-    // Firefox-specific manifest
-    fs.copyFileSync(path.join(SRC, 'firefox-manifest.json'), path.join(FIREFOX_DIST, 'manifest.json'));
+    // Firefox-specific manifest — keep its structure but use the canonical version.
+    const firefoxManifest = JSON.parse(fs.readFileSync(path.join(SRC, 'firefox-manifest.json'), 'utf8'));
+    firefoxManifest.version = MANIFEST_VERSION;
+    fs.writeFileSync(path.join(FIREFOX_DIST, 'manifest.json'), JSON.stringify(firefoxManifest, null, 2));
 
     // Zip for AMO upload
-    const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
-    const zipName = `nostrkey-firefox-v${pkg.version}.zip`;
+    const zipName = `nostrkey-firefox-v${MANIFEST_VERSION}.zip`;
     const zipPath = path.join('./distros', zipName);
-    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    for (const oldZip of fs.readdirSync('./distros').filter(f => f.startsWith('nostrkey-firefox-') && f.endsWith('.zip'))) {
+        fs.unlinkSync(path.join('./distros', oldZip));
+    }
     execSync(`cd ${FIREFOX_DIST} && zip -r ../${zipName} . -x '.*'`);
 
     console.log(`Firefox build complete → ${FIREFOX_DIST}/`);
