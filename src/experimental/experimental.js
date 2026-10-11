@@ -237,6 +237,11 @@ function renderLibp2p() {
     if (copyBindBtn) {
         copyBindBtn.disabled = !attestation;
     }
+
+    const clearBindBtn = $('libp2p-clear-bind-btn');
+    if (clearBindBtn) {
+        clearBindBtn.disabled = !attestation && !activePubkey && !activeNpub;
+    }
 }
 
 async function loadLibp2pModules() {
@@ -508,6 +513,16 @@ async function copyLibp2pBinding() {
     pushLibp2pLog('Attestation copied via extension clipboard helper.');
 }
 
+async function clearLibp2pBinding() {
+    state.libp2p.attestation = null;
+    state.libp2p.activePubkey = '';
+    state.libp2p.activeNpub = '';
+    state.libp2p.lastBindError = '';
+    await api.storage.local.remove('experimental:libp2p-binding');
+    pushLibp2pLog('Cleared libp2p binding.');
+    renderLibp2p();
+}
+
 function renderLibp2pSection() {
     const statusMount = $('libp2p-status');
     if (statusMount) {
@@ -540,6 +555,10 @@ async function init() {
 
     $('libp2p-copy-bind-btn')?.addEventListener('click', async () => {
         await copyLibp2pBinding();
+    });
+
+    $('libp2p-clear-bind-btn')?.addEventListener('click', async () => {
+        await clearLibp2pBinding();
     });
 
     $('libp2p-peer-input')?.addEventListener('keydown', async (event) => {
