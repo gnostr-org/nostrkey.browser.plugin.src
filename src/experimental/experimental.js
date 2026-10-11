@@ -78,6 +78,27 @@ function rebuildRelayDescriptor() {
     };
 }
 
+async function dialBootstrapAddrs(node, addrs) {
+    if (!Array.isArray(addrs) || !addrs.length) return false;
+    for (const addr of addrs) {
+        pushLibp2pLog(`Bootstrapping to ${addr}`);
+        try {
+            await node.dial(addr);
+            const connections = node.getConnections();
+            const lastConnection = connections.length ? connections[connections.length - 1] : null;
+            state.libp2p.lastDialTarget = addr;
+            state.libp2p.lastDialPeer = lastConnection?.remotePeer?.toString?.() || addr;
+            pushLibp2pLog(`Bootstrap connected: ${state.libp2p.lastDialPeer}`);
+            state.libp2p.connectionCount = connections.length;
+            return true;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            pushLibp2pLog(`Bootstrap dial failed for ${addr}: ${message}`, 'warn');
+        }
+    }
+    return false;
+}
+
 function renderFeatures() {
     const container = $('features-container');
     if (!container) return;
@@ -361,6 +382,9 @@ async function ensureLibp2pNode() {
         rebuildRelayDescriptor();
         state.libp2p.lastError = '';
         pushLibp2pLog(`Node started with peer ID ${state.libp2p.peerId}`);
+        if (state.libp2p.bootstrapAddrs.length) {
+            await dialBootstrapAddrs(node, state.libp2p.bootstrapAddrs);
+        }
         renderLibp2p();
         return node;
     } catch (error) {
@@ -409,21 +433,7 @@ async function bootstrapLibp2pNode() {
 
     try {
         await saveBootstrapAddrs(addrs);
-        for (const addr of addrs) {
-            pushLibp2pLog(`Bootstrapping to ${addr}`);
-            try {
-                await node.dial(addr);
-                state.libp2p.lastDialTarget = addr;
-                const connections = node.getConnections();
-                const lastConnection = connections.length ? connections[connections.length - 1] : null;
-                state.libp2p.lastDialPeer = lastConnection?.remotePeer?.toString?.() || addr;
-                pushLibp2pLog(`Bootstrap connected: ${state.libp2p.lastDialPeer}`);
-                break;
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                pushLibp2pLog(`Bootstrap dial failed for ${addr}: ${message}`, 'warn');
-            }
-        }
+        await dialBootstrapAddrs(node, addrs);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         state.libp2p.lastBootstrapError = message;
