@@ -78,6 +78,7 @@ function initElements() {
     // General
     elements.closeBtn = $('close-btn');
     elements.clearDataBtn = document.querySelector('[data-action="clearData"]');
+    elements.openExperimentalBtn = $('open-experimental-btn');
 }
 
 // Render functions
@@ -310,6 +311,37 @@ function handleClose() {
     window.close();
 }
 
+async function openExtensionPage(path) {
+    const url = api.runtime.getURL(path);
+    try {
+        if (api.tabs && api.tabs.create && api.tabs.get && api.tabs.update) {
+            const store = await api.storage.local.get('_pageTabs');
+            const map = store._pageTabs || {};
+            const existingId = map[path];
+            if (existingId != null) {
+                try {
+                    await api.tabs.get(existingId);
+                    await api.tabs.update(existingId, { url, active: true });
+                    const tab = await api.tabs.get(existingId);
+                    if (tab && tab.windowId != null && api.windows && api.windows.update) {
+                        await api.windows.update(tab.windowId, { focused: true });
+                    }
+                    return;
+                } catch (_) { /* tab closed — open a fresh one */ }
+            }
+            const tab = await api.tabs.create({ url });
+            map[path] = tab.id;
+            await api.storage.local.set({ _pageTabs: map });
+            return;
+        }
+    } catch (_) { /* fall through */ }
+    if (api.tabs && api.tabs.create) {
+        api.tabs.create({ url });
+    } else {
+        window.open(url, 'nostrkey-page');
+    }
+}
+
 // Bind events
 function bindEvents() {
     // Security
@@ -454,6 +486,11 @@ function bindEvents() {
     }
     if (elements.clearDataBtn) {
         elements.clearDataBtn.addEventListener('click', handleClearData);
+    }
+    if (elements.openExperimentalBtn) {
+        elements.openExperimentalBtn.addEventListener('click', () => {
+            openExtensionPage('experimental/experimental.html');
+        });
     }
 
     // Prevent default form submission
