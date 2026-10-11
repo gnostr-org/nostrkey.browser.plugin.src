@@ -144,7 +144,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         lastError: '',
         logs: [],
         autoPingEnabled: false,
-        autoPingInterval: 30,
+        autoPingInterval: 1,
     };
 
     let libp2pModules = null;
@@ -599,7 +599,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
 
     async function setAutoPing({ enabled, interval }) {
         const nextEnabled = Boolean(enabled);
-        const nextInterval = Math.max(5, Math.min(3600, Math.floor(Number(interval) || 30)));
+        const nextInterval = Math.max(1, Math.min(3600, Math.floor(Number(interval) || 1)));
 
         state.autoPingEnabled = nextEnabled;
         state.autoPingInterval = nextInterval;
@@ -832,7 +832,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const autoPing = stored[AUTO_PING_STORAGE_KEY];
             if (autoPing && typeof autoPing === 'object') {
                 state.autoPingEnabled = Boolean(autoPing.enabled);
-                state.autoPingInterval = Math.max(5, Math.min(3600, Math.floor(Number(autoPing.interval) || 30)));
+                state.autoPingInterval = Math.max(1, Math.min(3600, Math.floor(Number(autoPing.interval) || 1)));
                 pushLog(`Restored auto-ping: ${state.autoPingEnabled ? `enabled every ${state.autoPingInterval}s` : 'disabled'}`);
             }
 

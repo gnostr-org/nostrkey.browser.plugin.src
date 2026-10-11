@@ -34,7 +34,7 @@ const state = {
         subscribedTopics: [],
         pubsubMessages: [],
         autoPingEnabled: false,
-        autoPingInterval: 30,
+        autoPingInterval: 1,
         lastDialTarget: '',
         lastDialPeer: '',
         lastPingLatency: '',
@@ -496,7 +496,7 @@ async function updateAutoPing() {
     const toggle = $('libp2p-auto-ping-toggle');
     const intervalInput = $('libp2p-auto-ping-interval');
     const enabled = toggle?.checked ?? false;
-    const interval = Math.max(5, Math.min(3600, Math.floor(Number(intervalInput?.value) || 30)));
+    const interval = Math.max(1, Math.min(3600, Math.floor(Number(intervalInput?.value) || 1)));
     await sendLibp2pMessage('libp2p.setAutoPing', { enabled, interval });
 }
 
