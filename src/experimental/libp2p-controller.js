@@ -1,4 +1,5 @@
 import { nip19 } from 'nostr-crypto-utils';
+import { multiaddr } from '@multiformats/multiaddr';
 
 const BINDING_STORAGE_KEY = 'experimental:libp2p-binding';
 const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
@@ -235,7 +236,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
 
         try {
             pushLog(`Dialing ${target}`);
-            const connection = await node.dial(target);
+            const connection = await node.dial(multiaddr(target));
             const remotePeer = connection?.remotePeer?.toString?.() || String(connection?.remotePeer || '');
             state.lastDialPeer = remotePeer || target;
             state.connectionCount = node.getConnections().length;
@@ -283,7 +284,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         for (const addr of addrs) {
             pushLog(`Bootstrapping to ${addr}`);
             try {
-                await node.dial(addr);
+                await node.dial(multiaddr(addr));
                 const connections = node.getConnections();
                 const lastConnection = connections.length ? connections[connections.length - 1] : null;
                 state.lastDialTarget = addr;
