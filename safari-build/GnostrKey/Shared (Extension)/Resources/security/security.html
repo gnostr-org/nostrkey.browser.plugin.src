@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="/a11y.js"></script>
+        <script defer src="security.build.js"></script>
+        <link rel="stylesheet" href="/options.build.css" />
+        <link rel="stylesheet" href="/instrument.css" />
+        <link rel="stylesheet" href="security.css" />
+        <title>Security — NostrKey</title>
+    </head>
+
+    <body class="ins">
+        <div class="page">
+            <header class="page-bar">
+                <div>
+                    <div class="micro-label">NostrKey &middot; Security</div>
+                    <h1 class="page-title">Key Protection</h1>
+                </div>
+                <button id="close-btn" class="btn btn--ghost btn--sm" type="button" title="Close" aria-label="Close">
+                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- LOCKED STATE — existing vault detected -->
+            <div id="locked-view">
+                <div class="rack">
+                    <section class="module">
+                        <div class="module-header">
+                            Vault locked
+                            <span class="header-end"><span class="led led--amber" aria-hidden="true"></span></span>
+                        </div>
+                        <div class="module-body">
+                            <p class="help-text">
+                                An encrypted vault already exists. Enter your master password to restore access to your keys and vault data.
+                            </p>
+                            <p id="stranded-recover-hint" class="help-text" style="display:none">
+                                Some keys are protected by a master password that is no longer on file. Enter that old password to recover them.
+                            </p>
+                            <form id="unlock-form">
+                                <div class="field">
+                                    <label for="unlock-password">Master password</label>
+                                    <input
+                                        id="unlock-password"
+                                        type="password"
+                                        class="input"
+                                        placeholder="Enter your master password"
+                                        autocomplete="current-password"
+                                        autofocus
+                                    />
+                                </div>
+                                <div
+                                    id="unlock-error"
+                                    class="field-error"
+                                    aria-live="assertive"
+                                ></div>
+                                <div class="form-actions">
+                                    <button class="btn btn--primary" type="submit">Restore vault</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+
+                    <!-- Delete and start fresh -->
+                    <section class="module" id="delete-vault-section">
+                        <div class="module-header">Forgot password</div>
+                        <div class="module-body">
+                            <p class="help-text">
+                                If you've forgotten your password, you can delete the existing vault and start fresh. This permanently deletes all your profiles, keys, and vault data.
+                            </p>
+                            <button id="show-delete-confirm-btn" class="btn btn--destructive" type="button">
+                                Delete vault &amp; start fresh
+                            </button>
+                            <div id="delete-confirm-dialog" class="confirm-box hidden">
+                                <div class="warn-strip warn-strip--red" role="alert">
+                                    This will permanently delete all your profiles, private keys, and vault data. This cannot be undone.
+                                </div>
+                                <div class="form-actions">
+                                    <button id="confirm-delete-btn" class="btn btn--destructive" type="button">Yes, delete everything</button>
+                                    <button id="cancel-delete-btn" class="btn btn--ghost" type="button">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- UNLOCKED STATE — all settings -->
+            <div id="unlocked-view">
+
+                <!-- Shared success readout -->
+                <div
+                    id="page-success"
+                    class="page-success"
+                    aria-live="polite"
+                ></div>
+
+                <div class="rack">
+
+                    <!-- CHANNEL STRIP — active identity + trust meter -->
+                    <div class="channel-strip">
+                        <div class="strip-avatar--glyph" aria-hidden="true">&#9673;</div>
+                        <div class="strip-id">
+                            <div class="strip-name">
+                                <span id="strip-name-text">Profile</span>
+                                <span id="strip-led" class="led led--off" aria-hidden="true"></span>
+                            </div>
+                            <div id="strip-npub" class="strip-npub mono ins-truncate"></div>
+                        </div>
+                        <div class="strip-end">
+                            <div class="meter-scale" aria-hidden="true"><span>L3</span><span>L2</span><span>L1</span><span>L0</span></div>
+                            <div id="trust-meter" class="meter" data-level="0" role="img" aria-label="Security level 0 of 3">
+                                <span class="meter-seg" data-seg="3"></span>
+                                <span class="meter-seg" data-seg="2"></span>
+                                <span class="meter-seg" data-seg="1"></span>
+                                <span class="meter-seg" data-seg="0"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MASTER PASSWORD MODULE -->
+                    <details class="module" id="master-password">
+                        <summary class="module-header">
+                            Master password
+                            <span class="header-end"><span id="password-led" class="led led--off" aria-hidden="true"></span></span>
+                        </summary>
+                        <div class="module-body">
+                            <p class="help-text">
+                                Encrypt your private keys at rest with a master password.
+                                <strong>One password protects every identity in this plugin</strong> &mdash;
+                                it&rsquo;s set once for the whole vault, not per profile.
+                            </p>
+
+                            <div id="security-status" class="status-line"></div>
+
+                            <!-- No password set: show Set Password form -->
+                            <div id="set-password-section">
+                                <div class="warn-strip warn-strip--amber" role="alert">
+                                    There is no password recovery. If you lose your master password, you lose access to your private keys. Keep a backup of your nsec/hex keys before enabling this.
+                                </div>
+                                <form id="set-password-form">
+                                    <div class="field">
+                                        <label for="new-password">New password</label>
+                                        <input
+                                            id="new-password"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Minimum 8 characters"
+                                            autocomplete="new-password"
+                                        />
+                                        <div
+                                            id="password-strength"
+                                            class="field-hint"
+                                        ></div>
+                                    </div>
+                                    <div class="field">
+                                        <label for="confirm-password">Confirm password</label>
+                                        <input
+                                            id="confirm-password"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Re-enter password"
+                                            autocomplete="new-password"
+                                        />
+                                    </div>
+                                    <div
+                                        id="security-error"
+                                        class="field-error"
+                                        aria-live="assertive"
+                                    ></div>
+                                    <div class="form-actions">
+                                        <button
+                                            class="btn btn--primary"
+                                            type="submit"
+                                            id="set-password-btn"
+                                            disabled
+                                        >
+                                            Set password
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- Password is set: show Change / Remove options -->
+                            <div id="change-password-section">
+                                <div class="micro-label micro-label--gap">Change password</div>
+                                <form id="change-password-form">
+                                    <div class="field">
+                                        <label for="current-password">Current password</label>
+                                        <input
+                                            id="current-password"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Current password"
+                                            autocomplete="current-password"
+                                        />
+                                    </div>
+                                    <div class="field">
+                                        <label for="new-password-change">New password</label>
+                                        <input
+                                            id="new-password-change"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Minimum 8 characters"
+                                            autocomplete="new-password"
+                                        />
+                                    </div>
+                                    <div class="field">
+                                        <label for="confirm-password-change">Confirm new password</label>
+                                        <input
+                                            id="confirm-password-change"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Re-enter new password"
+                                            autocomplete="new-password"
+                                        />
+                                    </div>
+                                    <div
+                                        id="change-error"
+                                        class="field-error"
+                                        aria-live="assertive"
+                                    ></div>
+                                    <div class="form-actions">
+                                        <button
+                                            class="btn btn--primary"
+                                            type="submit"
+                                            id="change-password-btn"
+                                            disabled
+                                        >
+                                            Change password
+                                        </button>
+                                    </div>
+                                </form>
+
+                                <hr class="ins-hr" />
+
+                                <div class="micro-label">Remove password</div>
+                                <p class="help-text">
+                                    This will decrypt your keys and store them without encryption. You must enter your current password to confirm.
+                                </p>
+                                <form id="remove-password-form">
+                                    <div class="field">
+                                        <label for="remove-password">Current password</label>
+                                        <input
+                                            id="remove-password"
+                                            type="password"
+                                            class="input"
+                                            placeholder="Current password"
+                                            autocomplete="current-password"
+                                        />
+                                    </div>
+                                    <div
+                                        id="remove-error"
+                                        class="field-error"
+                                        aria-live="assertive"
+                                    ></div>
+                                    <div class="form-actions">
+                                        <button
+                                            class="btn btn--destructive"
+                                            type="submit"
+                                            id="remove-password-btn"
+                                            disabled
+                                        >
+                                            Remove password
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- TRUST LADDER — the level-meter, explained rung by rung -->
+                    <section class="module" id="trust-ladder">
+                        <div class="module-header">
+                            Security level
+                            <span class="header-end"><span id="trust-level-readout" class="mono">L0</span></span>
+                        </div>
+                        <div class="module-body">
+                            <div class="rung" id="rung-l3" data-achieved="false">
+                                <span id="rung-l3-led" class="led led--off" aria-hidden="true"></span>
+                                <span class="rung-tag mono">L3</span>
+                                <div class="rung-main">
+                                    <div class="rung-name">Remote signer</div>
+                                    <div class="rung-desc ins-muted">Signing happens in a NIP-46 bunker — apps never talk to your key directly.</div>
+                                    <div class="rung-action" id="rung-l3-action">
+                                        Level up: connect a bunker profile, or run the built-in nsecBunker from the NostrKey panel.
+                                    </div>
+                                </div>
+                                <span class="rung-state mono" id="rung-l3-state">&mdash;</span>
+                            </div>
+                            <div class="rung" id="rung-l2" data-achieved="false">
+                                <span id="rung-l2-led" class="led led--off" aria-hidden="true"></span>
+                                <span class="rung-tag mono">L2</span>
+                                <div class="rung-main">
+                                    <div class="rung-name">Encrypted at rest + auto-lock</div>
+                                    <div class="rung-desc ins-muted">A master password encrypts your keys on this device, and the vault locks itself after inactivity.</div>
+                                    <div class="rung-action" id="rung-l2-action">
+                                        Level up: set a master password above, then pick an auto-lock interval.
+                                    </div>
+                                </div>
+                                <span class="rung-state mono" id="rung-l2-state">&mdash;</span>
+                            </div>
+                            <div class="rung" id="rung-l1" data-achieved="false">
+                                <span id="rung-l1-led" class="led led--off" aria-hidden="true"></span>
+                                <span class="rung-tag mono">L1</span>
+                                <div class="rung-main">
+                                    <div class="rung-name">Backed up</div>
+                                    <div class="rung-desc ins-muted">A copy of your keys exists outside this browser. If this device dies, your identity survives.</div>
+                                    <div class="rung-action" id="rung-l1-action">
+                                        <span id="rung-l1-hint">Level up: set a master password first, then download an encrypted backup here.</span>
+                                        <button id="backup-export-btn" class="btn btn--sm" type="button">Download encrypted backup</button>
+                                        <div id="backup-error" class="field-error" aria-live="assertive"></div>
+                                    </div>
+                                </div>
+                                <span class="rung-state mono" id="rung-l1-state">&mdash;</span>
+                            </div>
+                            <div class="rung" id="rung-l0" data-achieved="true">
+                                <span class="led led--green" aria-hidden="true"></span>
+                                <span class="rung-tag mono">L0</span>
+                                <div class="rung-main">
+                                    <div class="rung-name">Working key</div>
+                                    <div class="rung-desc ins-muted">Your key lives in this extension and signs locally. This is the floor, not the ceiling.</div>
+                                </div>
+                                <span class="rung-state mono">OK</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- AUTO-LOCK MODULE -->
+                    <details class="module" id="autolock">
+                        <summary class="module-header">
+                            Auto-lock
+                            <span class="header-end"><span id="autolock-led" class="led led--off" aria-hidden="true"></span></span>
+                        </summary>
+                        <div class="module-body">
+                            <p class="help-text">
+                                Automatically lock the extension after a period of inactivity.
+                            </p>
+
+                            <div id="autolock-disabled-msg">
+                                <div class="warn-strip warn-strip--amber" role="alert">
+                                    Set a master password to enable auto-lock.
+                                </div>
+                            </div>
+
+                            <div id="autolock-controls">
+                                <div class="field">
+                                    <label for="autolock-select">Lock after inactivity</label>
+                                    <select id="autolock-select" class="input">
+                                        <option value="5">5 minutes</option>
+                                        <option value="15">15 minutes</option>
+                                        <option value="30">30 minutes</option>
+                                        <option value="60">1 hour</option>
+                                        <option value="90">90 minutes</option>
+                                        <option value="180">3 hours</option>
+                                        <option value="0">Never</option>
+                                    </select>
+                                </div>
+                                <div
+                                    id="autolock-success"
+                                    class="field-hint strength-5"
+                                    aria-live="polite"
+                                ></div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Encryption status (shown when master password is active) -->
+                    <div id="encryption-status" class="module-row">
+                        <span class="row-label led-label">
+                            <span class="led led--green" aria-hidden="true"></span>
+                            Master password is active &mdash; keys are encrypted at rest.
+                        </span>
+                    </div>
+
+                </div><!-- end rack -->
+            </div><!-- end unlocked-view -->
+        </div><!-- end page -->
+    </body>
+</html>

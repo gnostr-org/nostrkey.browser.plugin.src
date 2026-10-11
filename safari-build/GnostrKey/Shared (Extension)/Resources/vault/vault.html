@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="/a11y.js"></script>
+        <script defer src="vault.build.js"></script>
+        <link rel="stylesheet" href="/options.build.css" />
+        <link rel="stylesheet" href="/instrument.css" />
+        <link rel="stylesheet" href="vault.css" />
+        <title>Vault — NostrKey</title>
+    </head>
+
+    <body class="ins">
+        <div class="page">
+            <!-- Locked gate -->
+            <div id="vault-locked-gate">
+                <div class="rack">
+                    <section class="module">
+                        <div class="module-header">
+                            Vault &middot; Locked
+                            <span class="header-end"><span class="led led--amber" aria-hidden="true"></span></span>
+                        </div>
+                        <div class="module-body gate-body">
+                            <svg class="gate-lock" aria-hidden="true" width="56" height="56" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M16 12V8a4 4 0 10-8 0v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                <rect x="5" y="12" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.5"></rect>
+                                <circle cx="12" cy="17" r="1.5" fill="currentColor"></circle>
+                            </svg>
+                            <span id="gate-title" class="gate-title">Vault Locked</span>
+                            <p id="gate-message" class="gate-message">Set a master password to encrypt your data at rest before using the vault.</p>
+                            <button id="gate-security-btn" class="btn btn--primary" type="button">Set Master Password</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Main vault content (hidden until password check passes) -->
+            <div id="vault-main-content">
+                <header class="page-bar">
+                    <div>
+                        <div class="micro-label">NostrKey &middot; Vault</div>
+                        <h1 class="page-title">Encrypted Vault</h1>
+                    </div>
+                    <button id="close-btn" class="btn btn--ghost btn--sm" type="button" title="Close" aria-label="Close">
+                        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </header>
+
+                <p class="help-text">
+                    Markdown documents encrypted to your key, stored on Nostr relays via NIP-78.
+                </p>
+
+                <!-- Sync module -->
+                <div class="rack sync-rack">
+                    <section class="module">
+                        <div class="module-header">
+                            Relay sync
+                            <span class="header-end"><span id="doc-count" class="doc-count mono">0 docs</span></span>
+                        </div>
+                        <div class="module-body sync-row">
+                            <span id="sync-dot" class="led led--green" aria-hidden="true"></span>
+                            <span id="sync-text" class="sync-text mono">Synced</span>
+                            <button id="sync-btn" class="btn btn--sm" type="button">Sync Now</button>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Main layout -->
+                <div class="vault-grid">
+                    <!-- Documents (left rack) -->
+                    <div class="rack">
+                        <section class="module">
+                            <div class="module-header">
+                                Documents
+                                <span class="header-end">
+                                    <button id="new-doc-btn" class="btn btn--sm" type="button">New</button>
+                                </span>
+                            </div>
+                            <div class="module-body">
+                                <label for="search-input" class="sr-only">Search documents</label>
+                                <input
+                                    id="search-input"
+                                    type="text"
+                                    class="ins-input mono"
+                                    placeholder="Search..."
+                                    autocomplete="off"
+                                />
+                                <div id="file-list" class="file-list"></div>
+                                <div id="no-documents" class="empty-note">
+                                    No documents
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- Editor (right rack) -->
+                    <div class="rack">
+                        <section class="module">
+                            <div class="module-header">Editor</div>
+                            <div class="module-body">
+                                <div id="editor-panel">
+                                    <div class="field">
+                                        <label for="editor-title">Title</label>
+                                        <input
+                                            id="editor-title"
+                                            type="text"
+                                            class="ins-input mono"
+                                            placeholder="path/to/document.md"
+                                            autocomplete="off"
+                                            autocapitalize="off"
+                                            spellcheck="off"
+                                        />
+                                    </div>
+
+                                    <div class="field">
+                                        <label for="editor-content">Content</label>
+                                        <textarea
+                                            id="editor-content"
+                                            class="ins-input mono vault-editor"
+                                            rows="18"
+                                            placeholder="Write your markdown here..."
+                                            spellcheck="false"
+                                        ></textarea>
+                                    </div>
+
+                                    <div class="form-actions">
+                                        <button id="save-doc-btn" class="btn btn--primary" type="button">Save</button>
+                                        <button id="delete-doc-btn" class="btn btn--destructive" type="button">Delete</button>
+                                        <span id="dirty-label" class="dirty-label">Unsaved changes</span>
+                                    </div>
+                                </div>
+
+                                <div id="editor-empty" class="empty-note">
+                                    Select a document or create a new one
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+            </div><!-- /vault-main-content -->
+
+            <!-- Toast -->
+            <div id="toast" class="toast" aria-live="polite"></div>
+        </div><!-- /page -->
+    </body>
+</html>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="/a11y.js"></script>
+        <script defer src="api-keys.build.js"></script>
+        <link rel="stylesheet" href="/options.build.css" />
+        <link rel="stylesheet" href="/instrument.css" />
+        <link rel="stylesheet" href="api-keys.css" />
+        <title>API Key Vault</title>
+    </head>
+
+    <body class="ins p-4 md:p-8 max-w-3xl mx-auto min-h-screen">
+        <!-- Locked gate -->
+        <div id="vault-locked-gate">
+            <div class="rack mt-8">
+                <div class="module">
+                    <div class="module-header">
+                        Vault
+                        <span class="header-end">
+                            <span class="led-label"><span class="led led--amber"></span>Locked</span>
+                        </span>
+                    </div>
+                    <div class="module-body flex flex-col items-center gap-4 py-10">
+                        <svg aria-hidden="true" class="ins-muted" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 12V8a4 4 0 10-8 0v4" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <rect x="5" y="12" width="14" height="10" rx="2"></rect>
+                            <circle cx="12" cy="17" r="1.5" fill="currentColor" stroke="none"></circle>
+                        </svg>
+                        <span id="gate-title" class="text-lg font-semibold">Vault Locked</span>
+                        <p id="gate-message" class="ins-muted text-sm text-center max-w-xs">Set a master password to encrypt your data at rest before using the API key vault.</p>
+                        <button id="gate-security-btn" class="btn btn--primary" type="button">Set Master Password</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content (hidden until password check passes) -->
+        <div id="vault-main-content">
+        <div class="flex items-start justify-between mb-2">
+            <div>
+                <div class="micro-label">NostrKey &middot; Encrypted Store</div>
+                <h1 class="text-xl font-semibold mt-1">API Key Vault</h1>
+            </div>
+            <button id="close-btn" class="btn btn--ghost btn--sm" type="button" title="Close" aria-label="Close">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <p class="text-sm ins-muted">
+            Keys are encrypted to your Nostr key. Synced via NIP-78 relays
+            or kept local-only.
+        </p>
+
+        <!-- Sync module -->
+        <div class="rack mt-4">
+            <div class="module">
+                <div class="module-header">
+                    Sync
+                    <span class="header-end">
+                        <span id="key-count" class="mono">0 keys</span>
+                    </span>
+                </div>
+                <div class="module-row">
+                    <span id="sync-dot" class="led" aria-hidden="true"></span>
+                    <span id="sync-text" class="text-sm">Synced</span>
+                    <span class="row-value">
+                        <button id="sync-toggle" class="patch-point" type="button" aria-pressed="true">
+                            <span class="patch-jack"></span>Relay sync
+                        </button>
+                        <button id="sync-btn" class="btn btn--sm" type="button">Sync now</button>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key rack -->
+        <div id="key-table-container" class="mt-4">
+            <div class="micro-label mb-1">Stored keys</div>
+            <div id="key-table-body" class="rack"></div>
+        </div>
+
+        <div id="no-keys" class="mt-4 ins-muted italic text-sm">
+            No API keys stored yet.
+        </div>
+
+        <!-- Add key + backup rack -->
+        <div class="rack mt-4">
+            <div class="module">
+                <div class="module-header">Add key</div>
+                <div class="module-body flex flex-col md:flex-row gap-2">
+                    <label for="new-label" class="sr-only">Key label</label>
+                    <input
+                        id="new-label"
+                        type="text"
+                        class="ins-input flex-1"
+                        placeholder="Label (e.g. OpenAI)"
+                        autocomplete="off"
+                    />
+                    <label for="new-secret" class="sr-only">Secret key</label>
+                    <input
+                        id="new-secret"
+                        type="text"
+                        class="ins-input mono flex-1"
+                        placeholder="Secret key"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                    <button id="add-key-btn" class="btn btn--primary" type="button" disabled>Save</button>
+                </div>
+            </div>
+            <div class="module">
+                <div class="module-header">Backup</div>
+                <div class="module-body flex flex-wrap gap-2 items-center">
+                    <button id="export-btn" class="btn btn--sm" type="button">Export</button>
+                    <label class="btn btn--sm cursor-pointer">
+                        Import
+                        <input
+                            id="import-file"
+                            type="file"
+                            accept=".json"
+                            class="hidden"
+                        />
+                    </label>
+                    <span class="led-label ml-auto"><span class="led led--green"></span>Encrypted at rest</span>
+                </div>
+            </div>
+        </div>
+        </div><!-- /vault-main-content -->
+
+        <!-- Toast -->
+        <div
+            id="toast"
+            class="rack fixed top-4 right-4 px-4 py-3 text-sm font-medium"
+            aria-live="polite"
+        ></div>
+    </body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="/a11y.js"></script>
+        <script defer src="permission.build.js"></script>
+        <link rel="stylesheet" href="/options.build.css" />
+        <link rel="stylesheet" href="/instrument.css" />
+        <link rel="stylesheet" href="permission.css" />
+        <title>Signing Request — NostrKey</title>
+    </head>
+
+    <body class="ins">
+        <div class="perm-shell">
+            <div class="rack is-live" id="perm-rack">
+                <!-- Auto-decline countdown: drains over the request's lifetime -->
+                <div class="perm-timebar" aria-hidden="true">
+                    <div id="perm-timebar-fill" class="perm-timebar-fill"></div>
+                </div>
+                <!-- Header: what this surface is -->
+                <div class="module">
+                    <div class="module-header">
+                        Signing request
+                        <span class="header-end">
+                            <span id="perm-countdown" class="perm-countdown" role="timer" aria-live="polite"></span>
+                            <span id="perm-queue" class="perm-queue"></span>
+                            <span class="led led--signal" aria-hidden="true"></span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Requesting origin -->
+                <div class="module">
+                    <div class="module-header">Requesting origin</div>
+                    <div class="origin-row">
+                        <div id="origin-glyph" class="origin-glyph" aria-hidden="true"></div>
+                        <div class="origin-id">
+                            <div id="perm-host" class="origin-host"></div>
+                            <div id="origin-claim" class="readout-unverified" hidden>
+                                Claimed — not verified
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Decoded request readout -->
+                <div class="module">
+                    <div class="module-header">Request</div>
+                    <div id="perm-warnings" class="perm-warnings" role="alert"></div>
+                    <div class="perm-params">
+                        <div class="readout-param">
+                            <span class="readout-key">Action</span>
+                            <span id="perm-type" class="readout-val"></span>
+                        </div>
+                        <div class="readout-param" id="event-kind-row" hidden>
+                            <span class="readout-key">Kind</span>
+                            <span class="readout-val">
+                                <span id="kind-channel" class="kind-channel">
+                                    <span id="kind-num" class="kind-num mono"></span>
+                                    <span id="kind-label"></span>
+                                </span>
+                                <a id="event-kind-link" class="kind-spec-link" href="#">spec</a>
+                            </span>
+                        </div>
+                        <div class="readout-param" id="event-created-row" hidden>
+                            <span class="readout-key">Timestamp</span>
+                            <span class="readout-val">
+                                <span id="event-created" class="param-stamp"></span>
+                            </span>
+                        </div>
+                        <div class="readout-param" id="bunker-notice" hidden>
+                            <span class="readout-key">Signer</span>
+                            <span class="readout-val">
+                                <span class="param-stamp param-stamp--warn">Signed remotely via nsecBunker</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Event content preview → raw JSON -->
+                <div class="module" id="event-preview" hidden>
+                    <div class="module-header">
+                        Event content
+                        <span class="header-end">
+                            <button
+                                id="raw-json-toggle"
+                                class="btn btn--ghost btn--sm"
+                                type="button"
+                                aria-expanded="false"
+                                aria-controls="event-preview-pre"
+                            >
+                                Raw JSON
+                            </button>
+                        </span>
+                    </div>
+                    <div class="module-body">
+                        <div id="content-preview" class="content-preview"></div>
+                        <pre id="event-preview-pre" class="readout raw-json" hidden></pre>
+                    </div>
+                </div>
+
+                <!-- Decision -->
+                <div class="module">
+                    <div class="perm-actions">
+                        <button id="minimize-btn" class="btn btn--ghost" type="button" title="Keep this request and decide later">Minimize</button>
+                        <button id="deny-btn" class="btn btn--destructive" type="button">Deny</button>
+                        <button id="allow-btn" class="btn btn--primary" type="button">Approve</button>
+                    </div>
+                    <div class="perm-patch">
+                        <button
+                            id="remember-patch"
+                            class="patch-point"
+                            type="button"
+                            aria-pressed="false"
+                        >
+                            <span class="patch-jack" aria-hidden="true"></span>
+                            <span id="remember-patch-label">Remember for this site</span>
+                        </button>
+                        <div id="remember-note" class="perm-patch-note">
+                            Applies your choice to this site only. Nothing is remembered unless you patch it.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

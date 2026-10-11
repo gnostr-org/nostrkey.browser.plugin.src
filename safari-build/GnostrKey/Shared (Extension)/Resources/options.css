@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Legacy monokai theme retired (feat/instrument-ux).
+   All page styling now comes from instrument.css (design system) plus each
+   page's own CSS. This file keeps only:
+     - the Tailwind directives (utility classes still used in markup)
+     - a few functional, theme-neutral base rules
+     - instrument-token fallbacks for bare elements no page CSS restyles
+   ========================================================================== */
+
+.hidden {
+    display: none !important;
+}
+
+html {
+    font-size: 1rem;
+}
+
+/* Fallback for bare <label> elements on pages whose CSS doesn't restyle
+   them (converted pages override with .field > label / .field-label etc.).
+   Tokens resolve from instrument.css, loaded on every page. */
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ins-muted);
+}
+
+/* Fallback for bare inline <code> (instrument.css supplies the mono font). */
+code {
+    background: var(--ins-raised);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--ins-text);
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

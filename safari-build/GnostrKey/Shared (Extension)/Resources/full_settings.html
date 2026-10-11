@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script src="a11y.js"></script>
+        <link rel="stylesheet" href="options.build.css" />
+        <script defer src="options.build.js"></script>
+        <link rel="stylesheet" href="instrument.css" />
+        <link rel="stylesheet" href="full_settings.css" />
+        <title>Settings — NostrKey</title>
+    </head>
+
+    <body class="ins">
+        <div class="page">
+            <header class="page-bar">
+                <div>
+                    <div class="micro-label">NostrKey &middot; Settings</div>
+                    <h1 class="page-title">Full Settings</h1>
+                </div>
+                <button id="close-btn" class="btn btn--ghost btn--sm" type="button" title="Close" aria-label="Close">
+                    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </header>
+            <p class="help-text page-sub">
+                Plugin-wide settings. Per-identity keys, relays, permissions and
+                bunker connections now live on each profile in the side panel.
+            </p>
+
+            <!-- ═══════════════ APPEARANCE & ACCESSIBILITY (viewport-level — applies
+                 everywhere in NostrKey; owned by a11y.js. Always visible) ═══════════════ -->
+            <div class="rack rack--gap" id="a11y-rack">
+                <!-- Appearance (viewport-level LOOK × MODE; owned by a11y.js) -->
+                <section class="module">
+                    <div class="module-header">Appearance</div>
+                    <div class="module-body">
+                        <!-- LOOK -->
+                        <div class="a11y-control">
+                            <span class="micro-label" id="appearance-look-label">Look</span>
+                            <div
+                                class="seg-group"
+                                role="group"
+                                aria-labelledby="appearance-look-label"
+                            >
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-theme="console" aria-pressed="false" aria-label="Console look">
+                                    <span class="seg-swatch seg-swatch--console" aria-hidden="true"></span>Console
+                                </button>
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-theme="instrument" aria-pressed="false" aria-label="Instrument look">
+                                    <span class="seg-swatch seg-swatch--instrument" aria-hidden="true"></span>Instrument
+                                </button>
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-theme="analog" aria-pressed="false" aria-label="Analog look">
+                                    <span class="seg-swatch seg-swatch--analog" aria-hidden="true"></span>Analog
+                                </button>
+                            </div>
+                            <p class="help-text">Changes the plugin's colors everywhere.</p>
+                        </div>
+
+                        <!-- MODE -->
+                        <div class="a11y-control a11y-control--stacked">
+                            <span class="micro-label" id="appearance-mode-label">Mode</span>
+                            <div
+                                class="seg-group"
+                                role="group"
+                                aria-labelledby="appearance-mode-label"
+                            >
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-mode="system" aria-pressed="false" aria-label="System mode">System</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-mode="light" aria-pressed="false" aria-label="Light mode">Light</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-mode="dark" aria-pressed="false" aria-label="Dark mode">Dark</button>
+                            </div>
+                            <p class="help-text">System follows your device's light/dark setting.</p>
+                        </div>
+
+                        <!-- DENSITY -->
+                        <div class="a11y-control a11y-control--stacked">
+                            <span class="micro-label" id="appearance-density-label">Density</span>
+                            <div
+                                class="seg-group"
+                                role="group"
+                                aria-labelledby="appearance-density-label"
+                            >
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-density="comfortable" aria-pressed="false" aria-label="Comfortable density">Comfortable</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-appearance-density="compact" aria-pressed="false" aria-label="Compact density">Compact</button>
+                            </div>
+                            <p class="help-text">Compact removes some spacing to fit more on smaller screens.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="module" style="padding-top: 12px;">
+                    <div class="module-header">Accessibility</div>
+                    <div class="module-body">
+                        <!-- Text size -->
+                        <div class="a11y-control">
+                            <span class="micro-label" id="a11y-text-size-label">Text size</span>
+                            <div
+                                class="seg-group"
+                                role="group"
+                                aria-labelledby="a11y-text-size-label"
+                            >
+                                <button type="button" class="btn btn--sm seg-btn" data-a11y-text="s" aria-pressed="false" aria-label="Small text">S</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-a11y-text="m" aria-pressed="false" aria-label="Medium text (default)">M</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-a11y-text="l" aria-pressed="false" aria-label="Large text">L</button>
+                                <button type="button" class="btn btn--sm seg-btn" data-a11y-text="xl" aria-pressed="false" aria-label="Extra large text">XL</button>
+                            </div>
+                            <div class="a11y-preview mono" aria-hidden="true">Aa Bb Cc &middot; 0123456789</div>
+                            <p class="help-text">Changes text size everywhere in NostrKey.</p>
+                        </div>
+
+                        <!-- High contrast -->
+                        <div class="a11y-toggle-row">
+                            <div class="a11y-toggle-text">
+                                <span class="a11y-row-title" id="a11y-contrast-label">High contrast</span>
+                                <p class="help-text">Brighter text and outlines on every panel.</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input
+                                    type="checkbox"
+                                    id="a11y-contrast-toggle"
+                                    aria-labelledby="a11y-contrast-label"
+                                />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Reduce motion -->
+                        <div class="a11y-toggle-row">
+                            <div class="a11y-toggle-text">
+                                <span class="a11y-row-title" id="a11y-motion-label">Reduce motion</span>
+                                <p class="help-text">Stops pulsing and animation, even if your system setting is off.</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input
+                                    type="checkbox"
+                                    id="a11y-motion-toggle"
+                                    aria-labelledby="a11y-motion-label"
+                                />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ═══════════════ NOSTR SETTINGS (plugin-wide) ═══════════════ -->
+            <h2 class="settings-category micro-label">Nostr settings</h2>
+
+            <div class="rack rack--gap">
+                <!-- PROTOCOL HANDLER -->
+                <section class="module">
+                    <div class="module-header">nostr: links</div>
+                    <div class="module-body">
+                        <p class="help-text">
+                            Redirect <code>nostr:</code> protocol links
+                            to a web client. Leave empty to disable. Uses template
+                            variables:
+                            <code>{raw}</code>,
+                            <code>{hex}</code>,
+                            <code>{hrp}</code>,
+                            <code>{p_or_e}</code>,
+                            <code>{u_or_n}</code>,
+                            <code>{relay0}</code>.
+                        </p>
+                        <div class="field">
+                            <input
+                                id="protocol-handler"
+                                type="text"
+                                class="input mono"
+                                placeholder="https://njump.me/{raw}"
+                                autocapitalize="off"
+                                autocomplete="off"
+                                spellcheck="off"
+                            />
+                        </div>
+                        <div class="form-actions">
+                            <button
+                                class="btn btn--sm"
+                                data-action="useNjump"
+                            >
+                                Use njump.me
+                            </button>
+                            <button
+                                class="btn btn--sm btn--ghost"
+                                data-action="disableHandler"
+                            >
+                                Disable
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ═══════════════ GENERAL ═══════════════ -->
+            <h2 class="settings-category micro-label">General</h2>
+
+            <div class="rack rack--gap">
+                <!-- ABOUT -->
+                <section class="module">
+                    <div class="module-header">About</div>
+                    <div class="module-body">
+                        <p class="help-text">
+                            <a
+                                href="https://nostrkey.com"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-action"
+                            >
+                                nostrkey.com
+                            </a>
+                            &mdash; Cross-browser Nostr key management, encrypted vault, and identity layer.
+                        </p>
+                        <p class="help-text fine-print">
+                            By Humanjava Enterprises Inc
+                        </p>
+                    </div>
+                </section>
+            </div>
+
+            <div class="form-actions page-actions">
+                <button class="btn" data-action="closeOptions">Close</button>
+                <button class="btn btn--destructive" data-action="clearData">
+                    Clear Data
+                </button>
+            </div>
+        </div><!-- end page -->
+    </body>
+</html>
