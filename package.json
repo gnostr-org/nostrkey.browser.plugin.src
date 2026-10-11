@@ -37,11 +37,16 @@
   "author": "Humanjava Enterprises Inc",
   "license": "MIT",
   "dependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@libp2p/ping": "^3.1.14",
+    "@libp2p/websockets": "^10.1.22",
+    "@libp2p/yamux": "^8.0.4",
     "@scure/bip32": "^2.2.0",
     "@scure/bip39": "^2.2.0",
     "async-mutex": "^0.5.0",
     "idb": "^8.0.0",
     "json-format-highlight": "^1.0.4",
+    "libp2p": "^3.3.12",
     "nostr-crypto-utils": "^0.9.2",
     "qrcode": "^1.5.4"
   },

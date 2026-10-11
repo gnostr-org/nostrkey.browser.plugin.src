@@ -76,3 +76,97 @@
     line-height: 1.5;
     color: var(--ins-muted);
 }
+
+.exp-status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.exp-status-grid--compact {
+    margin-top: 12px;
+}
+
+.exp-field {
+    display: grid;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.exp-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.exp-label {
+    font-family: var(--ins-font-ui);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ins-muted);
+}
+
+.exp-value {
+    margin-top: 4px;
+    font-family: var(--ins-font-ui);
+    font-size: 0.875rem;
+    color: var(--ins-text);
+}
+
+.exp-value--wrap,
+.exp-pre,
+.libp2p-log-msg {
+    word-break: break-all;
+}
+
+.exp-pre {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--ins-hair);
+    border-radius: 12px;
+    background: var(--ins-bg);
+    font-family: var(--ins-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ins-text);
+    white-space: pre-wrap;
+}
+
+.exp-log {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--ins-hair);
+    border-radius: 12px;
+    background: var(--ins-bg);
+    min-height: 88px;
+}
+
+.libp2p-log-line {
+    display: grid;
+    gap: 4px;
+    font-family: var(--ins-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.libp2p-log-line--error {
+    color: var(--ins-red);
+}
+
+.libp2p-log-line--warn {
+    color: var(--ins-amber);
+}
+
+.libp2p-log-ts {
+    color: var(--ins-muted);
+}
+
+.libp2p-log-empty {
+    font-family: var(--ins-font-ui);
+    font-size: 0.8125rem;
+    color: var(--ins-muted);
+}
