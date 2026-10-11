@@ -27,6 +27,8 @@
     "test:watch": "vitest",
     "test:e2e": "npx playwright test",
     "test:all": "vitest run && npx playwright test",
+    "p2p:peer": "node scripts/p2p-test-peer.js",
+    "p2p:ping": "node scripts/p2p-test-peer.js ping",
     "test:e2e:settings": "npx playwright test test/e2e/settings-persistence.spec.js",
     "test:e2e:consent": "npx playwright test test/e2e/consent-redress.e2e.spec.js test/e2e/consent-sheet-lifecycle.e2e.spec.js",
     "firefox:run": "npm run build:firefox && npx --yes web-ext run --target=firefox-desktop --source-dir=distros/firefox",
