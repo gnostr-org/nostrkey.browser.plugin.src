@@ -3,6 +3,17 @@
 const DEFAULT_TOPIC = 'gnostr';
 const DEFAULT_PING_INTERVAL_MS = 1000;
 const DEFAULT_PUBLISH_INTERVAL_MS = 1000;
+const DETERMINISTIC_EXTENSION_PEER_ID = '12D3KooWNeFQq6UZ8meyknx3sH7CGZUsJsSNntzRsDuFTdAwpDBP';
+
+// Browser-safe WSS bootstrap relays that the extension also uses. These can
+// act as circuit-relay intermediaries so this test peer can reach the
+// deterministic browser extension peer once it has a relay reservation.
+const WSS_BOOTSTRAP_RELAYS = [
+    '/dns4/lith-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+    '/dns4/chic-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+    '/dns4/sing-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+    '/dns4/chic-1-b.bootstrap.ipni.io/tcp/4453/wss/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+];
 
 function parseArgs(argv) {
     const args = argv.slice(2);
@@ -24,11 +35,20 @@ function parseArgs(argv) {
         return { command: 'ping', count, topic };
     }
 
-    return { command: 'run' };
+    const options = { command: 'run', dialExtension: true, extraDials: [] };
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--no-dial-ext') {
+            options.dialExtension = false;
+        } else if (args[i] === '--dial' && args[i + 1]) {
+            options.extraDials.push(args[i + 1]);
+            i++;
+        }
+    }
+    return options;
 }
 
 async function createNode() {
-    const [{ createLibp2p }, { webSockets }, { webRTCDirect }, { noise }, { yamux }, { gossipsub }, { identify }, { bootstrap }, { circuitRelayServer, circuitRelayTransport }, { dcutr }] = await Promise.all([
+    const [{ createLibp2p }, { webSockets }, { webRTCDirect }, { noise }, { yamux }, { gossipsub }, { identify }, { bootstrap }, { circuitRelayServer, circuitRelayTransport }, { dcutr }, { multiaddr }, { peerIdFromString }] = await Promise.all([
         import('libp2p'),
         import('@libp2p/websockets'),
         import('@libp2p/webrtc'),
@@ -39,41 +59,115 @@ async function createNode() {
         import('@libp2p/bootstrap'),
         import('@libp2p/circuit-relay-v2'),
         import('@libp2p/dcutr'),
+        import('@multiformats/multiaddr'),
+        import('@libp2p/peer-id'),
     ]);
 
-    return createLibp2p({
-        addresses: {
-            listen: [
-                '/ip4/0.0.0.0/tcp/0/ws',
-                '/ip4/0.0.0.0/udp/0/webrtc-direct',
-                '/p2p-circuit',
-            ],
-        },
-        transports: [webSockets(), webRTCDirect(), circuitRelayTransport()],
-        connectionEncryption: [noise()],
-        streamMuxers: [yamux()],
-        services: {
-            identify: identify(),
-            pubsub: gossipsub({
-                allowPublishToZeroTopicPeers: true,
-                emitSelf: true,
-            }),
-            relay: circuitRelayServer(),
-            dcutr: dcutr(),
-        },
-        peerDiscovery: [
-            bootstrap({
-                list: [
-                    '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
-                    '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
-                    '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
-                    '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+    const extensionPeerId = peerIdFromString(DETERMINISTIC_EXTENSION_PEER_ID);
+
+    return {
+        node: await createLibp2p({
+            addresses: {
+                listen: [
+                    '/ip4/0.0.0.0/tcp/0/ws',
+                    '/ip4/0.0.0.0/udp/0/webrtc-direct',
+                    '/p2p-circuit',
                 ],
-                timeout: 0,
-                tagTTL: Infinity,
-            }),
-        ],
+            },
+            transports: [webSockets(), webRTCDirect(), circuitRelayTransport()],
+            connectionEncryption: [noise()],
+            streamMuxers: [yamux()],
+            services: {
+                identify: identify(),
+                pubsub: gossipsub({
+                    allowPublishToZeroTopicPeers: true,
+                    emitSelf: true,
+                    directPeers: [
+                        { id: extensionPeerId, addrs: [] },
+                    ],
+                }),
+                relay: circuitRelayServer(),
+                dcutr: dcutr(),
+            },
+            peerDiscovery: [
+                bootstrap({
+                    list: [
+                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+                    ],
+                    timeout: 0,
+                    tagTTL: Infinity,
+                }),
+            ],
+        }),
+        multiaddr,
+    };
+}
+
+async function tryDialExtension(node, multiaddr, relayAddr) {
+    const target = `${relayAddr}/p2p-circuit/p2p/${DETERMINISTIC_EXTENSION_PEER_ID}`;
+    try {
+        await node.dial(multiaddr(target));
+        console.log(`connected to deterministic extension via ${target}`);
+        return true;
+    } catch (_) {
+        // Best-effort background dial; failures are expected when the
+        // extension has not yet made a relay reservation.
+        return false;
+    }
+}
+
+async function maintainExtensionConnection(node, multiaddr, enabled) {
+    if (!enabled) return;
+
+    console.log(`target extension peer: ${DETERMINISTIC_EXTENSION_PEER_ID}`);
+    console.log('best-effort: trying to reach the extension through WSS bootstrap relays (it must have a relay reservation first)');
+
+    let connected = false;
+    const attempt = async () => {
+        if (connected) return;
+        for (const relay of WSS_BOOTSTRAP_RELAYS) {
+            connected = await tryDialExtension(node, multiaddr, relay);
+            if (connected) break;
+        }
+    };
+
+    node.addEventListener('peer:connect', (event) => {
+        const peerId = event.detail?.toString?.() || String(event.detail || '');
+        if (peerId === DETERMINISTIC_EXTENSION_PEER_ID) {
+            connected = true;
+            console.log(`extension peer connected: ${peerId}`);
+        }
     });
+
+    node.addEventListener('peer:disconnect', (event) => {
+        const peerId = event.detail?.toString?.() || String(event.detail || '');
+        if (peerId === DETERMINISTIC_EXTENSION_PEER_ID) {
+            connected = false;
+            console.log(`extension peer disconnected: ${peerId}`);
+        }
+    });
+
+    await attempt();
+    setInterval(() => {
+        if (!connected) {
+            void attempt();
+        }
+    }, 10000);
+}
+
+async function dialExtraTargets(node, multiaddr, targets) {
+    for (const target of targets) {
+        try {
+            await node.dial(multiaddr(target));
+            console.log(`connected to ${target}`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`dial ${target} failed: ${message}`);
+        }
+    }
 }
 
 async function runPingCommand(node, count, topic) {
@@ -126,24 +220,44 @@ async function runRunCommand(node) {
     }, DEFAULT_PUBLISH_INTERVAL_MS);
 }
 
-async function main() {
-    const { command, count, topic } = parseArgs(process.argv);
+function printExtensionInstructions(multiaddrs) {
+    const webrtcDirect = multiaddrs.find((addr) => addr.includes('/webrtc-direct/'));
+    const ws = multiaddrs.find((addr) => addr.includes('/ws/p2p/'));
 
-    const node = await createNode();
+    console.log('');
+    console.log('to connect the extension to this test peer, paste one of these addresses');
+    console.log('into the Experimental page "Target multiaddr" field and click "Dial and ping":');
+    if (webrtcDirect) {
+        console.log(`  (best for browser) ${webrtcDirect}`);
+    }
+    if (ws) {
+        console.log(`  (local network only) ${ws}`);
+    }
+    console.log('');
+}
+
+async function main() {
+    const options = parseArgs(process.argv);
+
+    const { node, multiaddr } = await createNode();
     await node.start();
 
     console.log('peer id:', node.peerId.toString());
     console.log('listening on:');
-    for (const addr of node.getMultiaddrs()) {
-        console.log(`  ${addr.toString()}`);
+    const addrs = node.getMultiaddrs().map((addr) => addr.toString());
+    for (const addr of addrs) {
+        console.log(`  ${addr}`);
     }
 
-    if (command === 'ping') {
-        await runPingCommand(node, count, topic);
+    if (options.command === 'ping') {
+        await runPingCommand(node, options.count, options.topic);
         await node.stop();
         process.exit(0);
     }
 
+    printExtensionInstructions(addrs);
+    await dialExtraTargets(node, multiaddr, options.extraDials);
+    await maintainExtensionConnection(node, multiaddr, options.dialExtension);
     await runRunCommand(node);
 }
 
