@@ -332,10 +332,24 @@ function renderLibp2p() {
 
     const subscribedTopicsEl = $('libp2p-subscribed-topics');
     if (subscribedTopicsEl) {
-        subscribedTopicsEl.textContent = state.libp2p.subscribedTopics.length
-            ? state.libp2p.subscribedTopics.join('\n')
-            : 'Not subscribed to any topics.';
+        if (state.libp2p.subscribedTopics.length) {
+            subscribedTopicsEl.innerHTML = state.libp2p.subscribedTopics.map((topic) => `
+                <button type="button" class="exp-topic-chip" data-topic="${escapeHtml(topic)}">${escapeHtml(topic)}</button>
+            `).join('');
+        } else {
+            subscribedTopicsEl.textContent = 'Not subscribed to any topics.';
+        }
     }
+
+    subscribedTopicsEl?.querySelectorAll('.exp-topic-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            const topic = chip.getAttribute('data-topic');
+            const topicInput = $('libp2p-topic-input');
+            if (topicInput && topic) {
+                topicInput.value = topic;
+            }
+        });
+    });
 
     const pubsubMessagesEl = $('libp2p-pubsub-messages');
     if (pubsubMessagesEl) {
