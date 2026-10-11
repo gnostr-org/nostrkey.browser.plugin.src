@@ -24,6 +24,7 @@ const state = {
         activePubkey: '',
         activeNpub: '',
         attestation: null,
+        relayDescriptor: null,
         listenAddrs: [],
         connectionCount: 0,
         lastDialTarget: '',
@@ -187,6 +188,13 @@ function renderLibp2p() {
         attestationEl.textContent = attestation ? JSON.stringify(attestation, null, 2) : 'No attestation yet.';
     }
 
+    const relayDescriptorEl = $('libp2p-relay-descriptor');
+    if (relayDescriptorEl) {
+        relayDescriptorEl.textContent = state.libp2p.relayDescriptor
+            ? JSON.stringify(state.libp2p.relayDescriptor, null, 2)
+            : 'No relay descriptor yet.';
+    }
+
     const bindStateEl = $('libp2p-bind-state');
     if (bindStateEl) {
         bindStateEl.textContent = binding
@@ -241,6 +249,11 @@ function renderLibp2p() {
     const clearBindBtn = $('libp2p-clear-bind-btn');
     if (clearBindBtn) {
         clearBindBtn.disabled = !attestation && !activePubkey && !activeNpub;
+    }
+
+    const copyRelayBtn = $('libp2p-copy-relay-btn');
+    if (copyRelayBtn) {
+        copyRelayBtn.disabled = !state.libp2p.relayDescriptor;
     }
 }
 
@@ -323,30 +336,45 @@ async function ensureLibp2pNode() {
         state.libp2p.starting = false;
         renderLibp2p();
     }
+}
 
-    async function loadSavedLibp2pBinding() {
-        try {
-            const stored = await api.storage.local.get({
-                'experimental:libp2p-binding': null,
-            });
-            const saved = stored['experimental:libp2p-binding'];
-            if (!saved || typeof saved !== 'object') return;
+async function loadSavedLibp2pBinding() {
+    try {
+        const stored = await api.storage.local.get({
+            'experimental:libp2p-binding': null,
+        });
+        const saved = stored['experimental:libp2p-binding'];
+        if (!saved || typeof saved !== 'object') return;
 
-            state.libp2p.attestation = saved.attestation || null;
-            state.libp2p.activePubkey = saved.activePubkey || '';
-            state.libp2p.activeNpub = saved.activeNpub || '';
-            if (saved.peerId) {
-                state.libp2p.peerId = saved.peerId;
-                state.libp2p.peerIdShort = shortValue(saved.peerId, 14, 10);
-            }
-            if (saved.attestation?.binding?.peerId && !state.libp2p.peerId) {
-                state.libp2p.peerId = saved.attestation.binding.peerId;
-                state.libp2p.peerIdShort = shortValue(saved.attestation.binding.peerId, 14, 10);
-            }
-            renderLibp2p();
-        } catch (error) {
-            console.warn('Failed to restore libp2p binding:', error);
+        state.libp2p.attestation = saved.attestation || null;
+        state.libp2p.activePubkey = saved.activePubkey || '';
+        state.libp2p.activeNpub = saved.activeNpub || '';
+        if (saved.peerId) {
+            state.libp2p.peerId = saved.peerId;
+            state.libp2p.peerIdShort = shortValue(saved.peerId, 14, 10);
         }
+        if (saved.attestation?.binding?.peerId && !state.libp2p.peerId) {
+            state.libp2p.peerId = saved.attestation.binding.peerId;
+            state.libp2p.peerIdShort = shortValue(saved.attestation.binding.peerId, 14, 10);
+        }
+        state.libp2p.relayDescriptor = saved.relayDescriptor || (
+            state.libp2p.attestation && state.libp2p.activePubkey && state.libp2p.peerId
+                ? {
+                    title: 'NostrKey libp2p relay experiment',
+                    npub: state.libp2p.activeNpub || nip19.npubEncode(state.libp2p.activePubkey),
+                    pubkey: state.libp2p.activePubkey,
+                    peerId: state.libp2p.peerId,
+                    peerIdShort: state.libp2p.peerIdShort,
+                    listenAddrs: state.libp2p.attestation.binding?.listenAddrs || [],
+                    attestationId: state.libp2p.attestation.id,
+                    attestationKind: state.libp2p.attestation.kind,
+                    createdAt: state.libp2p.attestation.created_at ? new Date(state.libp2p.attestation.created_at * 1000).toISOString() : new Date().toISOString(),
+                }
+                : null
+        );
+        renderLibp2p();
+    } catch (error) {
+        console.warn('Failed to restore libp2p binding:', error);
     }
 }
 
@@ -475,12 +503,24 @@ async function bindLibp2pIdentity() {
             ...attestation,
             binding: payload,
         };
+        state.libp2p.relayDescriptor = {
+            title: 'NostrKey libp2p relay experiment',
+            npub,
+            pubkey: rawPubkey,
+            peerId: state.libp2p.peerId,
+            peerIdShort: state.libp2p.peerIdShort,
+            listenAddrs: state.libp2p.listenAddrs,
+            attestationId: attestation.id,
+            attestationKind: attestation.kind,
+            createdAt: new Date().toISOString(),
+        };
 
         await api.storage.local.set({
             'experimental:libp2p-binding': {
                 attestation: state.libp2p.attestation,
                 activePubkey: state.libp2p.activePubkey,
                 activeNpub: state.libp2p.activeNpub,
+                relayDescriptor: state.libp2p.relayDescriptor,
                 peerId: state.libp2p.peerId,
             },
         });
@@ -513,10 +553,24 @@ async function copyLibp2pBinding() {
     pushLibp2pLog('Attestation copied via extension clipboard helper.');
 }
 
+async function copyRelayDescriptor() {
+    const descriptor = state.libp2p.relayDescriptor;
+    if (!descriptor) return;
+    const text = JSON.stringify(descriptor, null, 2);
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        pushLibp2pLog('Relay descriptor copied to clipboard.');
+        return;
+    }
+    await api.runtime.sendMessage({ kind: 'copy', payload: text });
+    pushLibp2pLog('Relay descriptor copied via extension clipboard helper.');
+}
+
 async function clearLibp2pBinding() {
     state.libp2p.attestation = null;
     state.libp2p.activePubkey = '';
     state.libp2p.activeNpub = '';
+    state.libp2p.relayDescriptor = null;
     state.libp2p.lastBindError = '';
     await api.storage.local.remove('experimental:libp2p-binding');
     pushLibp2pLog('Cleared libp2p binding.');
@@ -555,6 +609,10 @@ async function init() {
 
     $('libp2p-copy-bind-btn')?.addEventListener('click', async () => {
         await copyLibp2pBinding();
+    });
+
+    $('libp2p-copy-relay-btn')?.addEventListener('click', async () => {
+        await copyRelayDescriptor();
     });
 
     $('libp2p-clear-bind-btn')?.addEventListener('click', async () => {
