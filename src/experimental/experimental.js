@@ -60,6 +60,21 @@ function shortValue(value, head = 10, tail = 8) {
     return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
+function rebuildRelayDescriptor() {
+    if (!state.libp2p.attestation || !state.libp2p.activePubkey || !state.libp2p.peerId) return;
+    state.libp2p.relayDescriptor = {
+        title: 'NostrKey libp2p relay experiment',
+        npub: state.libp2p.activeNpub || nip19.npubEncode(state.libp2p.activePubkey),
+        pubkey: state.libp2p.activePubkey,
+        peerId: state.libp2p.peerId,
+        peerIdShort: state.libp2p.peerIdShort,
+        listenAddrs: state.libp2p.listenAddrs,
+        attestationId: state.libp2p.attestation.id,
+        attestationKind: state.libp2p.attestation.kind,
+        createdAt: new Date().toISOString(),
+    };
+}
+
 function renderFeatures() {
     const container = $('features-container');
     if (!container) return;
@@ -317,6 +332,7 @@ async function ensureLibp2pNode() {
         state.libp2p.peerIdShort = shortValue(state.libp2p.peerId, 14, 10);
         state.libp2p.listenAddrs = node.getMultiaddrs().map((addr) => addr.toString());
         state.libp2p.connectionCount = node.getConnections().length;
+        rebuildRelayDescriptor();
         state.libp2p.lastError = '';
         pushLibp2pLog(`Node started with peer ID ${state.libp2p.peerId}`);
         renderLibp2p();
@@ -503,17 +519,7 @@ async function bindLibp2pIdentity() {
             ...attestation,
             binding: payload,
         };
-        state.libp2p.relayDescriptor = {
-            title: 'NostrKey libp2p relay experiment',
-            npub,
-            pubkey: rawPubkey,
-            peerId: state.libp2p.peerId,
-            peerIdShort: state.libp2p.peerIdShort,
-            listenAddrs: state.libp2p.listenAddrs,
-            attestationId: attestation.id,
-            attestationKind: attestation.kind,
-            createdAt: new Date().toISOString(),
-        };
+        rebuildRelayDescriptor();
 
         await api.storage.local.set({
             'experimental:libp2p-binding': {
