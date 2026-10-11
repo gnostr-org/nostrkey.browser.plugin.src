@@ -24,6 +24,7 @@ const state = {
         activeNpub: '',
         attestation: null,
         relayDescriptor: null,
+        defaultBootstrapAddrs: [],
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
@@ -125,6 +126,7 @@ function renderLibp2p() {
         activeNpub,
         attestation,
         listenAddrs,
+        defaultBootstrapAddrs,
         bootstrapAddrs,
         connectionCount,
         lastDialTarget,
@@ -155,6 +157,13 @@ function renderLibp2p() {
     const listenAddrsEl = $('libp2p-listen-addrs');
     if (listenAddrsEl) {
         listenAddrsEl.textContent = listenAddrs.length ? listenAddrs.join('\n') : 'No advertised listen addresses in this browser node.';
+    }
+
+    const defaultBootstrapEl = $('libp2p-default-bootstrap');
+    if (defaultBootstrapEl) {
+        defaultBootstrapEl.textContent = defaultBootstrapAddrs.length
+            ? defaultBootstrapAddrs.join('\n')
+            : 'No default IPFS bootstrap relays configured.';
     }
 
     const connectionCountEl = $('libp2p-connection-count');

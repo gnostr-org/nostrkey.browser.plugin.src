@@ -4,6 +4,16 @@ const BINDING_STORAGE_KEY = 'experimental:libp2p-binding';
 const BOOTSTRAP_STORAGE_KEY = 'experimental:libp2p-bootstrap';
 const LOG_LIMIT = 64;
 
+// Public IPFS bootstrap nodes that expose WSS. These are resolved from
+// _dnsaddr.bootstrap.libp2p.io TXT records. They may change over time; the
+// user can override or append via the custom bootstrap list in the UI.
+const DEFAULT_IPFS_BOOTSTRAP = [
+    '/dns4/lith-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+    '/dns4/chic-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+    '/dns4/sing-1.bootstrap.ipni.io/tcp/4443/wss/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+    '/dns4/chic-1-b.bootstrap.ipni.io/tcp/4453/wss/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+];
+
 function shortValue(value, head = 10, tail = 8) {
     if (!value) return '';
     if (value.length <= head + tail + 3) return value;
@@ -24,6 +34,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         activeNpub: '',
         attestation: null,
         relayDescriptor: null,
+        defaultBootstrapAddrs: [...DEFAULT_IPFS_BOOTSTRAP],
         bootstrapAddrs: [],
         listenAddrs: [],
         connectionCount: 0,
@@ -65,12 +76,14 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             noiseModule,
             yamuxModule,
             pingModule,
+            circuitRelayModule,
         ] = await Promise.all([
             import('libp2p'),
             import('@libp2p/websockets'),
             import('@chainsafe/libp2p-noise'),
             import('@libp2p/yamux'),
             import('@libp2p/ping'),
+            import('@libp2p/circuit-relay-v2'),
         ]);
         libp2pModules = {
             createLibp2p: libp2pModule.createLibp2p,
@@ -78,6 +91,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             noise: noiseModule.noise,
             yamux: yamuxModule.yamux,
             ping: pingModule.ping,
+            circuitRelayTransport: circuitRelayModule.circuitRelayTransport,
         };
         return libp2pModules;
     }
@@ -120,10 +134,10 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         updateStatus({ starting: true, lastError: '' });
 
         try {
-            const { createLibp2p, webSockets, noise, yamux, ping } = await loadLibp2pModules();
+            const { createLibp2p, webSockets, noise, yamux, ping, circuitRelayTransport } = await loadLibp2pModules();
             const node = await createLibp2p({
                 addresses: { listen: [] },
-                transports: [webSockets()],
+                transports: [webSockets(), circuitRelayTransport()],
                 connectionEncryption: [noise()],
                 streamMuxers: [yamux()],
                 services: { ping: ping() },
@@ -143,8 +157,10 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             rebuildRelayDescriptor();
             pushLog(`Node started with peer ID ${peerId}`);
 
-            if (state.bootstrapAddrs.length) {
-                await dialBootstrapAddrs(state.bootstrapAddrs);
+            const autoDialAddrs = [...state.defaultBootstrapAddrs, ...state.bootstrapAddrs];
+            if (autoDialAddrs.length) {
+                pushLog(`Auto-dialing ${state.defaultBootstrapAddrs.length} default IPFS bootstrap relay(s) and ${state.bootstrapAddrs.length} custom address(es)`);
+                await dialBootstrapAddrs(autoDialAddrs);
             }
 
             updateStatus({ starting: false });
@@ -421,12 +437,13 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                 pushLog('Restored libp2p binding from storage.');
             }
 
+            state.defaultBootstrapAddrs = [...DEFAULT_IPFS_BOOTSTRAP];
             const bootstrap = stored[BOOTSTRAP_STORAGE_KEY];
             state.bootstrapAddrs = Array.isArray(bootstrap)
                 ? bootstrap.filter((addr) => typeof addr === 'string' && addr.trim())
                 : [];
             if (state.bootstrapAddrs.length) {
-                pushLog(`Restored ${state.bootstrapAddrs.length} bootstrap address(es).`);
+                pushLog(`Restored ${state.bootstrapAddrs.length} custom bootstrap address(es).`);
             }
 
             broadcastStatus();
@@ -448,6 +465,7 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             activeNpub: state.activeNpub,
             attestation: state.attestation,
             relayDescriptor: state.relayDescriptor,
+            defaultBootstrapAddrs: [...state.defaultBootstrapAddrs],
             bootstrapAddrs: [...state.bootstrapAddrs],
             listenAddrs: [...state.listenAddrs],
             connectionCount: state.connectionCount,

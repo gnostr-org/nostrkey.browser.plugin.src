@@ -86,19 +86,24 @@
                             <button id="libp2p-dial-btn" class="button button--secondary flex-1" type="button">Dial and ping</button>
                         </div>
 
+                        <div class="exp-field">
+                            <div class="exp-label">Default IPFS bootstrap relays (auto-dialed)</div>
+                            <pre id="libp2p-default-bootstrap" class="exp-pre">Loading defaults…</pre>
+                        </div>
+
                         <label class="exp-field">
-                            <span class="exp-label">Bootstrap multiaddrs</span>
+                            <span class="exp-label">Custom bootstrap multiaddrs</span>
                             <textarea
                                 id="libp2p-bootstrap-input"
                                 class="input"
                                 rows="3"
-                                placeholder="/dns4/bootstrap.example/tcp/443/wss/p2p/12D3KooW...\n/dns4/another.example/tcp/443/wss/p2p/12D3KooW..."
+                                placeholder="/dns4/your-relay.example/tcp/443/wss/p2p/12D3KooW...\n/dns4/another.example/tcp/443/wss/p2p/12D3KooW..."
                                 spellcheck="false"
                             ></textarea>
                         </label>
 
                         <div class="exp-actions">
-                            <button id="libp2p-bootstrap-btn" class="button button--secondary flex-1" type="button">Bootstrap peer list</button>
+                            <button id="libp2p-bootstrap-btn" class="button button--secondary flex-1" type="button">Save and dial custom list</button>
                         </div>
 
                         <div class="exp-actions">
