@@ -69,6 +69,7 @@ import {
     buildVaultFilter,
     parseVaultEvent,
 } from './utilities/nip78';
+import { createLibp2pController } from './experimental/libp2p-controller';
 
 // Wrap storage.local with an interceptor that auto-triggers sync push on writes
 const _rawStorage = api.storage.local;
@@ -119,6 +120,15 @@ let prompt = {
 };
 let pendingQueue = { total: 0, processed: 0 };
 let activeBunkerServer = null;
+const libp2pController = createLibp2pController({
+    api,
+    storage,
+    getPubKey,
+    signEvent_,
+    sendStatusUpdate: (payload) => {
+        api.runtime.sendMessage({ kind: 'libp2p.statusUpdate', payload }).catch(() => {});
+    },
+});
 
 /**
  * Helper: run an async function and deliver the result via sendResponse.
@@ -441,6 +451,13 @@ async function restoreSessionState() {
         await refreshStrandedState();
     } catch (e) {
         log(`[STARTUP] Stranded-key check skipped (non-fatal): ${e.message}`);
+    }
+
+    // Restore persisted libp2p experiment state (binding + bootstrap list).
+    try {
+        await libp2pController.loadSavedState();
+    } catch (e) {
+        log(`[STARTUP] libp2p state restore skipped (non-fatal): ${e.message}`);
     }
 })();
 
@@ -975,6 +992,13 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return true;
     }
 
+    // Experimental libp2p surface is extension UI only.
+    if (typeof message.kind === 'string' && message.kind.startsWith('libp2p.') && !isExtensionSender(_sender)) {
+        log(`[SECURITY] Blocked ${message.kind} from non-extension sender`);
+        sendResponse({ success: false, error: 'Unauthorized sender' });
+        return true;
+    }
+
     let uuid = crypto.randomUUID();
     let sr;
 
@@ -1112,6 +1136,44 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             } else {
                 sendResponse(false);
             }
+            return true;
+
+        // --- Experimental libp2p controller (extension UI only) ---
+        case 'libp2p.start':
+            reply(sendResponse, () => libp2pController.startNode());
+            return true;
+        case 'libp2p.stop':
+            reply(sendResponse, () => libp2pController.stopNode());
+            return true;
+        case 'libp2p.status':
+            reply(sendResponse, () => ({ success: true, status: libp2pController.getStatus() }));
+            return true;
+        case 'libp2p.dial':
+            reply(sendResponse, () => libp2pController.dialPeer(message.payload));
+            return true;
+        case 'libp2p.bootstrap':
+            reply(sendResponse, () => libp2pController.setBootstrapAddrs(message.payload));
+            return true;
+        case 'libp2p.bindIdentity':
+            reply(sendResponse, () => libp2pController.bindIdentity());
+            return true;
+        case 'libp2p.clearBinding':
+            reply(sendResponse, () => libp2pController.clearBinding());
+            return true;
+        case 'libp2p.subscribeTopic':
+            reply(sendResponse, () => libp2pController.subscribeTopic(message.payload));
+            return true;
+        case 'libp2p.unsubscribeTopic':
+            reply(sendResponse, () => libp2pController.unsubscribeTopic(message.payload));
+            return true;
+        case 'libp2p.publishTopic':
+            reply(sendResponse, () => libp2pController.publishTopic(message.payload.topic, message.payload.data));
+            return true;
+        case 'libp2p.setAutoPing':
+            reply(sendResponse, () => libp2pController.setAutoPing(message.payload));
+            return true;
+        case 'libp2p.pingAll':
+            reply(sendResponse, () => libp2pController.pingAllConnectedPeers());
             return true;
 
         // --- Master password / lock handlers ---

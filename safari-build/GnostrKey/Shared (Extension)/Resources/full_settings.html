@@ -29,6 +29,73 @@
                 bunker connections now live on each profile in the side panel.
             </p>
 
+            <!-- ═══════════════ GENERAL ═══════════════ -->
+            <h2 class="settings-category micro-label">General</h2>
+
+            <div class="rack rack--gap">
+                <!-- ABOUT -->
+                <section class="module">
+                    <div class="module-header">About</div>
+                    <div class="module-body">
+                        <p class="help-text">
+                            <a
+                                href="https://nostrkey.com"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="inline-action"
+                            >
+                                nostrkey.com
+                            </a>
+                            &mdash; Cross-browser Nostr key management, encrypted vault, and identity layer.
+                        </p>
+                        <p class="help-text fine-print">
+                            By Humanjava Enterprises Inc
+                        </p>
+                    </div>
+                </section>
+
+                <!-- ADVANCED -->
+                <section class="module">
+                    <div class="module-header">Advanced</div>
+                    <div class="module-body">
+                        <p class="help-text">
+                            Experimental features and proofs-of-concept. These may only work partially, or not at all.
+                        </p>
+                        <button
+                            id="open-experimental-btn"
+                            class="btn btn--sm"
+                            type="button"
+                        >
+                            Open experimental features
+                        </button>
+                    </div>
+                </section>
+
+                <!-- P2P NODE (EXPERIMENTAL) -->
+                <section class="module">
+                    <div class="module-header">P2P node (experimental)</div>
+                    <div class="module-body">
+                        <p class="help-text">
+                            Run a libp2p browser node in the background for relay experiments.
+                        </p>
+                        <div class="a11y-toggle-row">
+                            <div class="a11y-toggle-text">
+                                <span class="a11y-row-title" id="p2p-node-toggle-label">Background P2P node</span>
+                                <p class="help-text" id="p2p-node-status">Status: unknown</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input
+                                    type="checkbox"
+                                    id="p2p-node-toggle"
+                                    aria-labelledby="p2p-node-toggle-label"
+                                />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
             <!-- ═══════════════ APPEARANCE & ACCESSIBILITY (viewport-level — applies
                  everywhere in NostrKey; owned by a11y.js. Always visible) ═══════════════ -->
             <div class="rack rack--gap" id="a11y-rack">
@@ -187,32 +254,6 @@
                                 Disable
                             </button>
                         </div>
-                    </div>
-                </section>
-            </div>
-
-            <!-- ═══════════════ GENERAL ═══════════════ -->
-            <h2 class="settings-category micro-label">General</h2>
-
-            <div class="rack rack--gap">
-                <!-- ABOUT -->
-                <section class="module">
-                    <div class="module-header">About</div>
-                    <div class="module-body">
-                        <p class="help-text">
-                            <a
-                                href="https://nostrkey.com"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="inline-action"
-                            >
-                                nostrkey.com
-                            </a>
-                            &mdash; Cross-browser Nostr key management, encrypted vault, and identity layer.
-                        </p>
-                        <p class="help-text fine-print">
-                            By Humanjava Enterprises Inc
-                        </p>
                     </div>
                 </section>
             </div>

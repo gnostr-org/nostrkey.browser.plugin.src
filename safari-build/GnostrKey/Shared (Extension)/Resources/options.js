@@ -22,6 +22,11 @@ const state = {
 
     // Security state (master password / encryption at rest)
     hasPassword: false,
+
+    // P2P node (experimental)
+    p2pReady: false,
+    p2pStarting: false,
+    p2pStopping: false,
     // Stranded-key signal (single channel: hasEncryptedData), mirrors security.js.
     strandedKeys: 0,
     hasPasswordHash: false,
@@ -78,12 +83,18 @@ function initElements() {
     // General
     elements.closeBtn = $('close-btn');
     elements.clearDataBtn = document.querySelector('[data-action="clearData"]');
+    elements.openExperimentalBtn = $('open-experimental-btn');
+
+    // P2P node (experimental)
+    elements.p2pNodeToggle = $('p2p-node-toggle');
+    elements.p2pNodeStatus = $('p2p-node-status');
 }
 
 // Render functions
 function render() {
     renderSecurity();
     renderProtocolHandler();
+    renderP2pNode();
     renderInputs();
 }
 
@@ -159,6 +170,29 @@ function renderSecurity() {
 function renderProtocolHandler() {
     if (elements.protocolHandlerInput) {
         elements.protocolHandlerInput.value = state.protocolHandler;
+    }
+}
+
+function renderP2pNode() {
+    const { p2pReady, p2pStarting, p2pStopping } = state;
+    const statusText = p2pReady
+        ? 'Status: running'
+        : p2pStarting
+            ? 'Status: starting…'
+            : p2pStopping
+                ? 'Status: stopping…'
+                : 'Status: stopped';
+
+    if (elements.p2pNodeStatus) {
+        elements.p2pNodeStatus.textContent = statusText;
+    }
+
+    if (elements.p2pNodeToggle) {
+        const checked = p2pReady || p2pStarting;
+        if (document.activeElement !== elements.p2pNodeToggle) {
+            elements.p2pNodeToggle.checked = checked;
+        }
+        elements.p2pNodeToggle.disabled = p2pStarting || p2pStopping;
     }
 }
 
@@ -310,6 +344,37 @@ function handleClose() {
     window.close();
 }
 
+async function openExtensionPage(path) {
+    const url = api.runtime.getURL(path);
+    try {
+        if (api.tabs && api.tabs.create && api.tabs.get && api.tabs.update) {
+            const store = await api.storage.local.get('_pageTabs');
+            const map = store._pageTabs || {};
+            const existingId = map[path];
+            if (existingId != null) {
+                try {
+                    await api.tabs.get(existingId);
+                    await api.tabs.update(existingId, { url, active: true });
+                    const tab = await api.tabs.get(existingId);
+                    if (tab && tab.windowId != null && api.windows && api.windows.update) {
+                        await api.windows.update(tab.windowId, { focused: true });
+                    }
+                    return;
+                } catch (_) { /* tab closed — open a fresh one */ }
+            }
+            const tab = await api.tabs.create({ url });
+            map[path] = tab.id;
+            await api.storage.local.set({ _pageTabs: map });
+            return;
+        }
+    } catch (_) { /* fall through */ }
+    if (api.tabs && api.tabs.create) {
+        api.tabs.create({ url });
+    } else {
+        window.open(url, 'nostrkey-page');
+    }
+}
+
 // Bind events
 function bindEvents() {
     // Security
@@ -455,6 +520,32 @@ function bindEvents() {
     if (elements.clearDataBtn) {
         elements.clearDataBtn.addEventListener('click', handleClearData);
     }
+    if (elements.openExperimentalBtn) {
+        elements.openExperimentalBtn.addEventListener('click', () => {
+            openExtensionPage('experimental/experimental.html');
+        });
+    }
+
+    // P2P node toggle (experimental)
+    if (elements.p2pNodeToggle) {
+        elements.p2pNodeToggle.addEventListener('change', async (e) => {
+            const wantOn = e.target.checked;
+            if (wantOn) {
+                state.p2pStarting = true;
+                renderP2pNode();
+                try {
+                    await api.runtime.sendMessage({ kind: 'libp2p.start' });
+                } catch (_) {}
+            } else {
+                state.p2pStopping = true;
+                renderP2pNode();
+                try {
+                    await api.runtime.sendMessage({ kind: 'libp2p.stop' });
+                } catch (_) {}
+            }
+            await refreshP2pNodeStatus();
+        });
+    }
 
     // Prevent default form submission
     document.querySelectorAll('form').forEach(form => {
@@ -521,9 +612,35 @@ async function refreshStrandedSignal() {
     } catch { /* leave strandedKeys at 0 */ }
 }
 
+function handleRuntimeMessage(message) {
+    if (message?.kind === 'libp2p.statusUpdate' && message.payload) {
+        const status = message.payload;
+        state.p2pReady = status.ready || false;
+        state.p2pStarting = status.starting || false;
+        state.p2pStopping = status.stopping || false;
+        renderP2pNode();
+    }
+}
+
+async function refreshP2pNodeStatus() {
+    try {
+        const response = await api.runtime.sendMessage({ kind: 'libp2p.status' });
+        if (response?.status) {
+            state.p2pReady = response.status.ready || false;
+            state.p2pStarting = response.status.starting || false;
+            state.p2pStopping = response.status.stopping || false;
+            renderP2pNode();
+        }
+    } catch (_) {
+        // Background may not be reachable; leave state as-is.
+    }
+}
+
 // Initialize
 async function init() {
     console.log('NostrKey Full Settings initializing...');
+
+    api.runtime.onMessage.addListener(handleRuntimeMessage);
 
     await initialize();
 
@@ -549,6 +666,8 @@ async function init() {
             });
         }
     }
+
+    await refreshP2pNodeStatus();
 
     render();
 }

@@ -56,7 +56,7 @@
                                 <div id="libp2p-status" class="exp-value">Stopped</div>
                             </div>
                             <div>
-                                <div class="exp-label">Peer ID</div>
+                                <div class="exp-label">Peer ID (deterministic)</div>
                                 <div id="libp2p-peer-id" class="exp-value exp-value--wrap">Not started</div>
                             </div>
                             <div>
@@ -65,9 +65,48 @@
                             </div>
                         </div>
 
+                        <div class="exp-field">
+                            <div class="exp-label">Node capabilities</div>
+                            <ul class="exp-capabilities">
+                                <li>Use circuit relays to reach other peers</li>
+                                <li>Dial out to WSS bootstrap peers and discovered nodes</li>
+                                <li>Listen on WebRTC addresses and attempt NAT hole punching</li>
+                                <li>Upgrade relayed connections to direct WebRTC via DCUtR</li>
+                                <li>Participate in gossipsub meshes and relay messages</li>
+                                <li>Sign a Nostr attestation binding the active identity to its peer ID</li>
+                            </ul>
+                        </div>
+
                         <div class="exp-actions">
-                            <button id="libp2p-start-btn" class="button button--primary flex-1" type="button">Start node</button>
-                            <button id="libp2p-stop-btn" class="button button--muted flex-1" type="button">Stop node</button>
+                            <button id="libp2p-start-btn" class="button button--start flex-1" type="button">Start node</button>
+                            <button id="libp2p-stop-btn" class="button button--stop flex-1" type="button">Stop node</button>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">Auto-ping connected peers</div>
+                            <div class="exp-actions exp-actions--align-start">
+                                <label class="exp-toggle">
+                                    <input id="libp2p-auto-ping-toggle" type="checkbox" class="checkbox" />
+                                    <span>Enable</span>
+                                </label>
+                                <label class="exp-interval">
+                                    <span>every</span>
+                                    <input
+                                        id="libp2p-auto-ping-interval"
+                                        class="input input--narrow"
+                                        type="number"
+                                        min="1"
+                                        max="3600"
+                                        value="1"
+                                    />
+                                    <span>seconds</span>
+                                </label>
+                            </div>
+                            <div class="exp-actions">
+                                <button id="libp2p-ping-all-btn" class="button button--secondary flex-1" type="button">Ping all peers now</button>
+                            </div>
+                            <div class="exp-label">Recent pings</div>
+                            <div id="libp2p-ping-log" class="exp-log" aria-live="polite"></div>
                         </div>
 
                         <label class="exp-field">
@@ -86,19 +125,29 @@
                             <button id="libp2p-dial-btn" class="button button--secondary flex-1" type="button">Dial and ping</button>
                         </div>
 
+                        <div class="exp-field">
+                            <div class="exp-label">Canonical libp2p bootstrap relays (peer discovery)</div>
+                            <pre id="libp2p-discovery-bootstrap" class="exp-pre">Loading defaults…</pre>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">Default WSS bootstrap relays (auto-dialed)</div>
+                            <pre id="libp2p-default-bootstrap" class="exp-pre">Loading defaults…</pre>
+                        </div>
+
                         <label class="exp-field">
-                            <span class="exp-label">Bootstrap multiaddrs</span>
+                            <span class="exp-label">Custom bootstrap multiaddrs</span>
                             <textarea
                                 id="libp2p-bootstrap-input"
                                 class="input"
                                 rows="3"
-                                placeholder="/dns4/bootstrap.example/tcp/443/wss/p2p/12D3KooW...\n/dns4/another.example/tcp/443/wss/p2p/12D3KooW..."
+                                placeholder="/dns4/your-relay.example/tcp/443/wss/p2p/12D3KooW...\n/dns4/another.example/tcp/443/wss/p2p/12D3KooW..."
                                 spellcheck="false"
                             ></textarea>
                         </label>
 
                         <div class="exp-actions">
-                            <button id="libp2p-bootstrap-btn" class="button button--secondary flex-1" type="button">Bootstrap peer list</button>
+                            <button id="libp2p-bootstrap-btn" class="button button--secondary flex-1" type="button">Save and dial custom list</button>
                         </div>
 
                         <div class="exp-actions">
@@ -147,6 +196,11 @@
                         </div>
 
                         <div class="exp-field">
+                            <div class="exp-label">WebRTC listen addresses (hole punching)</div>
+                            <pre id="libp2p-webrtc-addrs" class="exp-pre">No WebRTC listen addresses yet (requires a relay reservation).</pre>
+                        </div>
+
+                        <div class="exp-field">
                             <div class="exp-label">Nostr attestation</div>
                             <pre id="libp2p-attestation" class="exp-pre">No attestation yet.</pre>
                         </div>
@@ -158,6 +212,58 @@
                         <div class="exp-field">
                             <div class="exp-label">Relay descriptor</div>
                             <pre id="libp2p-relay-descriptor" class="exp-pre">No relay descriptor yet.</pre>
+                        </div>
+
+                        <div class="exp-field">
+                            <div class="exp-label">Pubsub</div>
+                            <div class="exp-status-grid exp-status-grid--compact">
+                                <div>
+                                    <div class="exp-label">Subscribed topics</div>
+                                    <pre id="libp2p-subscribed-topics" class="exp-pre">Not subscribed to any topics.</pre>
+                                </div>
+                                <div>
+                                    <div class="exp-label">Pubsub peers</div>
+                                    <pre id="libp2p-pubsub-peers" class="exp-pre">No pubsub peers yet.</pre>
+                                </div>
+                            </div>
+
+                            <label class="exp-field">
+                                <span class="exp-label">Topic</span>
+                                <input
+                                    id="libp2p-topic-input"
+                                    class="input"
+                                    type="text"
+                                    placeholder="nostr-events"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                            </label>
+
+                            <div class="exp-actions">
+                                <button id="libp2p-subscribe-btn" class="button button--secondary flex-1" type="button">Subscribe</button>
+                                <button id="libp2p-unsubscribe-btn" class="button button--secondary flex-1" type="button">Unsubscribe</button>
+                            </div>
+
+                            <label class="exp-field">
+                                <span class="exp-label">Message to publish</span>
+                                <input
+                                    id="libp2p-publish-input"
+                                    class="input"
+                                    type="text"
+                                    placeholder="hello mesh"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                            </label>
+
+                            <div class="exp-actions">
+                                <button id="libp2p-publish-btn" class="button button--secondary flex-1" type="button">Publish</button>
+                            </div>
+
+                            <div id="libp2p-pubsub-error" class="warn-strip warn-strip--red hidden" role="alert"></div>
+
+                            <div class="exp-label">Received messages</div>
+                            <div id="libp2p-pubsub-messages" class="exp-log" aria-live="polite"></div>
                         </div>
 
                         <div class="exp-field">
