@@ -47,7 +47,7 @@
     "@libp2p/bootstrap": "^12.0.33",
     "@libp2p/circuit-relay-v2": "^4.2.14",
     "@libp2p/dcutr": "3.0.29",
-    "@libp2p/gossipsub": "15.0.17",
+    "@libp2p/gossipsub": "^17.1.3",
     "@libp2p/identify": "^4.1.15",
     "@libp2p/ping": "^3.1.14",
     "@libp2p/tcp": "^11.0.29",
@@ -76,5 +76,10 @@
     "sharp": "^0.35.3",
     "tailwindcss": "^3.4.12",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "braces": "^3.0.3",
+    "micromatch": "^4.0.8",
+    "react-native-webrtc": false
   }
 }
