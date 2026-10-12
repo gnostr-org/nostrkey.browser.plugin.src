@@ -119,7 +119,10 @@ function stopRelay(proc) {
 }
 
 async function runBrowser(browserType, browserName, baseUrl, relayAddrs, httpUrl) {
-  const browser = await browserType.launch({ headless: process.env.CROSS_BROWSER_SMOKE_HEADLESS !== 'false' });
+  const browser = await browserType.launch({
+    headless: process.env.CROSS_BROWSER_SMOKE_HEADLESS !== 'false',
+    args: [], // don't inherit Chromium extension flags from playwright.config.js
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
 
