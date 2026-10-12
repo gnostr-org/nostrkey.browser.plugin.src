@@ -19,6 +19,19 @@ function hexToUint8Array(hex) {
     return bytes;
 }
 
+function concatUint8Arrays(chunks) {
+    if (chunks.length === 0) return new Uint8Array(0);
+    if (chunks.length === 1) return chunks[0];
+    const total = chunks.reduce((sum, c) => sum + c.length, 0);
+    const result = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return result;
+}
+
 async function getPrivateKey(seedHex = DETERMINISTIC_PEER_SEED_HEX) {
     if (typeof seedHex !== 'string' || seedHex.length !== 64 || !/^[0-9a-fA-F]+$/.test(seedHex)) {
         throw new Error('peerSeed must be a 64-character hex string');
@@ -53,7 +66,7 @@ const DEFAULT_WSS_BOOTSTRAP = [
 ];
 
 function isBrowserDialable(addr) {
-    return typeof addr === 'string' && (addr.includes('/wss/') || addr.includes('/ws/'));
+    return typeof addr === 'string' && (addr.includes('/wss/') || addr.includes('/ws/') || addr.includes('/webrtc-direct/'));
 }
 
 const DOH_ENDPOINTS = [
@@ -386,15 +399,39 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
                         '/webrtc',
                     ],
                 },
-                transports: [webSockets(), webRTC(), webRTCDirect(), circuitRelayTransport()],
+                transports: [
+                    webSockets(),
+                    webRTC({
+                        rtcConfiguration: {
+                            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+                        },
+                    }),
+                    webRTCDirect({
+                        rtcConfiguration: {
+                            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+                        },
+                    }),
+                    circuitRelayTransport(),
+                ],
                 connectionEncryption: [noise()],
                 streamMuxers: [yamux()],
+                connectionGater: {
+                    denyDialPeer: () => false,
+                    denyDialMultiaddr: () => false,
+                    denyInboundConnection: () => false,
+                    denyInboundEncryptedConnection: () => false,
+                    denyInboundUpgradedConnection: () => false,
+                    denyOutboundConnection: () => false,
+                    denyOutboundEncryptedConnection: () => false,
+                    denyOutboundUpgradedConnection: () => false,
+                },
                 services: {
                     ping: ping(),
                     identify: identify(),
                     pubsub: gossipsub({
                         allowPublishToZeroTopicPeers: true,
                         emitSelf: true,
+                        floodPublish: true,
                     }),
                     dcutr: dcutr(),
                 },
@@ -729,6 +766,107 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         }
     }
 
+    const REPORT_PROTOCOL = '/gnostr/test-report/1.0.0';
+
+    function streamChunkToUint8Array(chunk) {
+        if (chunk instanceof Uint8Array) return chunk;
+        if (chunk && typeof chunk.subarray === 'function') return chunk.subarray();
+        return new Uint8Array(chunk);
+    }
+
+    async function registerReportProtocol(handler) {
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        const node = state.node;
+        if (!node) {
+            return { success: false, error: 'Node not available.', status: getStatus() };
+        }
+        try {
+            await node.handle(REPORT_PROTOCOL, async ({ stream, connection }) => {
+                const chunks = [];
+                let settled = false;
+                let timeout = null;
+                let resolveDone = null;
+                const donePromise = new Promise((resolve) => { resolveDone = resolve; });
+
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    if (timeout) clearTimeout(timeout);
+                    stream.removeEventListener('message', onMessage);
+                    resolveDone();
+                };
+
+                const onMessage = (event) => {
+                    const data = event.detail?.data ?? event.data;
+                    if (data) {
+                        chunks.push(streamChunkToUint8Array(data));
+                        if (timeout) clearTimeout(timeout);
+                        timeout = setTimeout(finish, 250);
+                    }
+                };
+
+                stream.addEventListener('message', onMessage);
+                stream.addEventListener('close', finish, { once: true });
+                stream.addEventListener('end', finish, { once: true });
+
+                await Promise.race([donePromise, new Promise((resolve) => setTimeout(resolve, 5000))]);
+                finish();
+
+                if (chunks.length) {
+                    const data = concatUint8Arrays(chunks);
+                    const senderPeerId = connection?.remotePeer?.toString?.() || '';
+                    try {
+                        handler(data, senderPeerId);
+                    } catch (err) {
+                        pushLog(`Report protocol handler error: ${err instanceof Error ? err.message : String(err)}`, 'warn');
+                    }
+                }
+                try { await stream.close(); } catch {}
+            });
+            pushLog(`Registered report protocol ${REPORT_PROTOCOL}`);
+            return { success: true, status: getStatus() };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            pushLog(`Register report protocol failed: ${message}`, 'error');
+            return { success: false, error: message, status: getStatus() };
+        }
+    }
+
+    async function forwardReportToPeers(data) {
+        const startResult = await startNode();
+        if (!startResult.success) return startResult;
+        const node = state.node;
+        if (!node) {
+            return { success: false, error: 'Node not available.', status: getStatus() };
+        }
+        const payload = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+        const connections = node.getConnections();
+        let sent = 0;
+        let errors = 0;
+        for (const connection of connections) {
+            const remotePeer = connection?.remotePeer;
+            if (!remotePeer) continue;
+            try {
+                const stream = await node.dialProtocol(remotePeer, REPORT_PROTOCOL);
+                if (!stream.send(payload)) {
+                    await new Promise((resolve, reject) => {
+                        stream.addEventListener('drain', resolve, { once: true });
+                        stream.addEventListener('close', () => reject(new Error('Stream closed before drain')), { once: true });
+                    });
+                }
+                await stream.close();
+                sent += 1;
+            } catch (error) {
+                errors += 1;
+                const message = error instanceof Error ? error.message : String(error);
+                pushLog(`Direct report to ${shortValue(remotePeer.toString(), 14, 10)} failed: ${message}`, 'warn');
+            }
+        }
+        pushLog(`Direct report sent to ${sent} peer(s), ${errors} error(s)`);
+        return { success: true, sent, errors, status: getStatus() };
+    }
+
     async function bindIdentity() {
         const startResult = await startNode();
         if (!startResult.success) return startResult;
@@ -918,6 +1056,8 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
         subscribeTopic,
         unsubscribeTopic,
         publishTopic,
+        registerReportProtocol,
+        forwardReportToPeers,
         bindIdentity,
         clearBinding,
         getStatus,

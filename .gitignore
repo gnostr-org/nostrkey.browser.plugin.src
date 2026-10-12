@@ -28,6 +28,7 @@ distros/*.zip
 test-results/
 web-ext-artifacts/
 coverage/
+p2p-relay.json
 
 # QA/screenshot artifacts (tooling maintained internally; local leftovers stay untracked)
 dev/qa/

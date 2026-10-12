@@ -19,10 +19,28 @@ function assert(condition, message) {
     }
 }
 
+function getBrowserName() {
+    const ua = navigator.userAgent;
+    if (ua.includes('Firefox/')) return 'Firefox';
+    if (ua.includes('Chrome/')) return 'Chrome';
+    if (ua.includes('Safari/')) return 'Safari';
+    if (ua.includes('Edg/')) return 'Edge';
+    if (navigator.userAgentData?.brands) {
+        const brand = navigator.userAgentData.brands.find((b) => /Chrome|Chromium|Firefox|Safari|Edge/.test(b.brand));
+        if (brand) return brand.brand;
+    }
+    return navigator.userAgentData?.browser?.name || 'Unknown';
+}
+
 // ---------------------------------------------------------------------------
 // Tiny test harness
 // ---------------------------------------------------------------------------
 const tests = [];
+const testResults = [];
+let controller = null;
+let pageId = '';
+let relayHttpUrl = '';
+let httpEventSource = null;
 
 export function test(name, fn) {
     tests.push({ name, fn });
@@ -59,20 +77,30 @@ async function runTests() {
 
     let passed = 0;
     let failed = 0;
+    testResults.length = 0;
 
     for (const { name, fn } of tests) {
         try {
             await fn();
             passed += 1;
+            testResults.push({ name, ok: true });
             renderResult(container, name, true);
         } catch (error) {
             failed += 1;
+            testResults.push({ name, ok: false, error: error.message || String(error) });
             renderResult(container, name, false, error);
         }
     }
 
     summary.textContent = `${passed} passed, ${failed} failed of ${tests.length}`;
     summary.className = `summary ${failed === 0 ? 'pass' : 'fail'}`;
+    window.__testReport = buildReport();
+    renderConsensus();
+    void publishReport();
+    if (typeof window.__autoStartNode === 'function') {
+        window.__autoStartNode();
+    }
+    return window.__testReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +251,211 @@ function renderCoverage() {
 }
 
 // ---------------------------------------------------------------------------
+// Live P2P consensus coverage report
+// ---------------------------------------------------------------------------
+function readCoverageTotals() {
+    const script = el('coverage-summary');
+    if (!script) return null;
+    try {
+        const data = JSON.parse(script.textContent);
+        return data.total || null;
+    } catch {
+        return null;
+    }
+}
+
+function buildReport() {
+    const coverage = readCoverageTotals();
+    return {
+        type: 'test-report',
+        pageId,
+        peerId: controller?.getStatus()?.peerId || '',
+        browser: getBrowserName(),
+        userAgent: navigator.userAgent,
+        timestamp: new Date().toISOString(),
+        tests: {
+            total: testResults.length,
+            passed: testResults.filter((r) => r.ok).length,
+            failed: testResults.filter((r) => !r.ok).length,
+            results: testResults.map((r) => ({ name: r.name, ok: r.ok })),
+        },
+        coverage: coverage
+            ? {
+                  lines: coverage.lines?.pct ?? null,
+                  statements: coverage.statements?.pct ?? null,
+                  functions: coverage.functions?.pct ?? null,
+                  branches: coverage.branches?.pct ?? null,
+              }
+            : null,
+    };
+}
+
+async function postReportToHttp(report) {
+    if (!relayHttpUrl) return;
+    try {
+        const response = await fetch(`${relayHttpUrl}/report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(report),
+        });
+        if (!response.ok) {
+            console.warn('HTTP report post failed:', response.status);
+        }
+    } catch (error) {
+        console.warn('HTTP report post error:', error.message);
+    }
+}
+
+function connectHttpHub() {
+    if (!relayHttpUrl || typeof EventSource === 'undefined') return;
+    try {
+        httpEventSource = new EventSource(`${relayHttpUrl}/reports`);
+        httpEventSource.onmessage = (event) => {
+            let parsed;
+            try {
+                parsed = JSON.parse(event.data);
+            } catch {
+                parsed = null;
+            }
+            if (parsed?.type === 'test-report') {
+                handleReport(parsed);
+            }
+        };
+        httpEventSource.onerror = (error) => {
+            console.warn('HTTP hub SSE error:', error);
+        };
+        controller?.getStatus()?.logs?.push({ ts: new Date().toISOString(), kind: 'info', message: `Connected to HTTP report hub ${relayHttpUrl}` });
+    } catch (error) {
+        console.warn(`HTTP report hub connection failed: ${error.message}`);
+    }
+}
+
+async function publishReport() {
+    if (!controller) return;
+    const status = controller.getStatus();
+    const report = buildReport();
+    report.peerId = status.peerId || '';
+    try {
+        const payload = JSON.stringify(report);
+        if (status.ready) {
+            const [pubsubResult, directResult] = await Promise.all([
+                controller.publishTopic('gnostr-test', payload),
+                controller.forwardReportToPeers(payload),
+            ]);
+            if (!pubsubResult.success) {
+                console.warn('Report pubsub publish failed:', pubsubResult.error);
+            }
+            if (!directResult.success) {
+                console.warn('Report direct forward failed:', directResult.error);
+            }
+        }
+        await postReportToHttp(report);
+    } catch (error) {
+        console.warn('Report publish exception:', error.message);
+    }
+}
+
+const consensusReports = new Map();
+let localPageId = '';
+
+function handleReport(message) {
+    if (!message || message.type !== 'test-report') return;
+    consensusReports.set(message.pageId, {
+        ...message,
+        lastSeen: Date.now(),
+    });
+    renderConsensus();
+}
+
+function renderConsensus() {
+    const container = el('consensus-report');
+    if (!container) return;
+
+    const metrics = ['lines', 'statements', 'functions', 'branches'];
+    const rows = [];
+    const now = Date.now();
+
+    // include local report if available
+    const localReport = window.__testReport;
+    if (localReport) {
+        consensusReports.set(localReport.pageId, { ...localReport, lastSeen: now, local: true });
+    }
+
+    for (const [id, report] of consensusReports) {
+        if (now - report.lastSeen > 120000) {
+            consensusReports.delete(id);
+            continue;
+        }
+        rows.push(report);
+    }
+
+    const totalNodes = rows.length;
+    const allPassed = rows.every((r) => r.tests && r.tests.failed === 0);
+    const agreeingCoverage = rows.length > 1 && rows.every((r) => {
+        const first = rows[0].coverage;
+        if (first == null || r.coverage == null) return false;
+        return metrics.every((m) => r.coverage[m] === first[m]);
+    });
+
+    const header = ['Node', 'Browser', 'Peer ID', 'Tests', 'Coverage (L/S/F/B)', 'Last seen'];
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const h of header) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const report of rows) {
+        const tr = document.createElement('tr');
+        const nodeTd = document.createElement('td');
+        nodeTd.textContent = `${report.pageId.slice(0, 8)}…${report.local ? ' (you)' : ''}`;
+        tr.appendChild(nodeTd);
+
+        const browserTd = document.createElement('td');
+        browserTd.textContent = report.browser || '?';
+        tr.appendChild(browserTd);
+
+        const peerTd = document.createElement('td');
+        peerTd.textContent = report.peerId ? `${report.peerId.slice(0, 14)}…` : '—';
+        tr.appendChild(peerTd);
+
+        const testsTd = document.createElement('td');
+        testsTd.textContent = report.tests ? `${report.tests.passed}/${report.tests.total}` : '—';
+        if (report.tests && report.tests.failed > 0) testsTd.className = 'poor';
+        else if (report.tests && report.tests.failed === 0) testsTd.className = 'good';
+        tr.appendChild(testsTd);
+
+        const covTd = document.createElement('td');
+        if (report.coverage) {
+            covTd.textContent = metrics.map((m) => `${report.coverage[m]?.toFixed?.(1) ?? '-'}%`).join(' / ');
+        } else {
+            covTd.textContent = '—';
+        }
+        tr.appendChild(covTd);
+
+        const seenTd = document.createElement('td');
+        seenTd.textContent = `${Math.round((now - report.lastSeen) / 1000)}s ago`;
+        tr.appendChild(seenTd);
+
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    const summary = document.createElement('div');
+    summary.className = 'summary ' + (allPassed && totalNodes > 0 ? 'pass' : 'fail');
+    summary.textContent = `Consensus: ${totalNodes} node(s), ${allPassed ? 'all tests passed' : 'some tests failed'}, coverage ${agreeingCoverage ? 'agrees' : 'not compared / differs'}`;
+
+    container.innerHTML = '';
+    container.appendChild(summary);
+    container.appendChild(table);
+}
+
+// ---------------------------------------------------------------------------
 // Fake chrome.storage.local API
 // ---------------------------------------------------------------------------
 function makeFakeStorage() {
@@ -271,12 +504,12 @@ function makeFakeStorage() {
 // P2P mesh lab
 // ---------------------------------------------------------------------------
 function initMeshLab() {
-    const pageId = randomHex(16);
+    pageId = randomHex(16);
     const peerSeed = randomHex(32);
     const storage = makeFakeStorage();
     const logEl = el('node-log');
     let renderedLogCount = 0;
-    const relayAddr = getQueryParam('relay').trim();
+    const relayAddrs = new URLSearchParams(window.location.search).getAll('relay').map((a) => a.trim()).filter(Boolean);
 
     function appendLog(text, kind = 'info') {
         const line = document.createElement('div');
@@ -290,7 +523,7 @@ function initMeshLab() {
         appendLog(`${new Date().toISOString()} ${message}`, kind);
     }
 
-    const controller = createLibp2pController({
+    controller = createLibp2pController({
         storage,
         getPubKey: async () => TEST_PUBKEY,
         signEvent_: async (unsigned) => ({
@@ -303,15 +536,47 @@ function initMeshLab() {
         peerSeed,
     });
 
-    if (relayAddr) {
-        el('configured-relay').textContent = relayAddr;
-        el('configured-relay').classList.remove('muted');
-        log(`Using relay bootstrap address: ${relayAddr}`);
-        void controller.setBootstrapAddrs([relayAddr]);
+    window.__autoStartNode = () => {
+        if (!controller.getStatus().ready && !controller.getStatus().starting) {
+            void startNode();
+        }
+    };
+
+    async function setupController() {
+        if (relayAddrs.length) {
+            el('configured-relay').textContent = relayAddrs.join('\n');
+            el('configured-relay').classList.remove('muted');
+            log(`Using ${relayAddrs.length} relay bootstrap address(es)`);
+            await controller.setBootstrapAddrs(relayAddrs);
+        } else {
+            await controller.startNode();
+        }
+
+        await controller.registerReportProtocol((data) => {
+            let parsed;
+            try {
+                parsed = JSON.parse(new TextDecoder().decode(data));
+            } catch {
+                parsed = null;
+            }
+            if (parsed?.type === 'test-report') {
+                handleReport(parsed);
+            }
+        });
     }
+
+    void setupController();
+
+    // HTTP report hub fallback: headless browsers (especially Firefox) cannot
+    // always establish WebRTC-direct connections, so the relay daemon also
+    // exposes an SSE/HTTP endpoint that every browser can reach from the test
+    // origin. Reports are published over both libp2p and HTTP when available.
+    relayHttpUrl = new URLSearchParams(window.location.search).get('relayHttp')?.trim() || '';
+    connectHttpHub();
 
     let heartbeatInterval = null;
     let presenceInterval = null;
+    let reportInterval = null;
     const instances = new Map();
     let bc = null;
 
@@ -373,6 +638,17 @@ function initMeshLab() {
         };
     }
 
+    let reportPublished = false;
+
+    function scheduleReportRepublish() {
+        if (reportInterval) clearInterval(reportInterval);
+        reportInterval = setInterval(() => {
+            if (controller.getStatus().ready && window.__testReport) {
+                void publishReport();
+            }
+        }, 8000);
+    }
+
     function renderMeshStatus(status) {
         el('peer-id').textContent = status.peerId || '—';
         el('listen-addrs').textContent = status.listenAddrs.join('\n') || '—';
@@ -382,6 +658,16 @@ function initMeshLab() {
         const messagesEl = el('received-messages');
         messagesEl.innerHTML = '';
         for (const msg of status.pubsubMessages.slice(-20).reverse()) {
+            let parsed;
+            try {
+                parsed = JSON.parse(msg.data);
+            } catch {
+                parsed = null;
+            }
+            if (parsed?.type === 'test-report') {
+                handleReport(parsed);
+                continue;
+            }
             const line = document.createElement('div');
             line.className = 'message-line';
             line.textContent = `[${msg.ts}] ${msg.from} @ ${msg.topic}: ${msg.data}`;
@@ -396,6 +682,10 @@ function initMeshLab() {
 
         if (status.ready) {
             sendPresence();
+            if (!reportPublished && window.__testReport) {
+                reportPublished = true;
+                void publishReport();
+            }
         }
     }
 
@@ -430,6 +720,7 @@ function initMeshLab() {
             sendPresence();
         }, 5000);
 
+        scheduleReportRepublish();
         sendPresence();
     }
 
@@ -438,6 +729,9 @@ function initMeshLab() {
         heartbeatInterval = null;
         if (presenceInterval) clearInterval(presenceInterval);
         presenceInterval = null;
+        if (reportInterval) clearInterval(reportInterval);
+        reportInterval = null;
+        reportPublished = false;
         log('Stopping libp2p node…');
         const result = await controller.stopNode();
         if (!result.success) {
@@ -525,6 +819,6 @@ function initMeshLab() {
 // ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     renderCoverage();
-    runTests();
     initMeshLab();
+    runTests();
 });
