@@ -210,14 +210,10 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             const peerId = remotePeer.toString();
             const shortPeer = shortValue(peerId, 14, 10);
             try {
-                const pingStart = performance.now();
-                for await (const _ of pingService.ping(remotePeer)) {
-                    const latency = Math.max(0, Math.round(performance.now() - pingStart));
-                    const entry = { ts: new Date().toISOString(), peer: shortPeer, peerId, latency, ok: true };
-                    state.pingLog = [...state.pingLog, entry].slice(-16);
-                    pushLog(`Auto-ping ${shortPeer}: ${latency} ms`);
-                    break;
-                }
+                const latency = await pingService.ping(remotePeer);
+                const entry = { ts: new Date().toISOString(), peer: shortPeer, peerId, latency, ok: true };
+                state.pingLog = [...state.pingLog, entry].slice(-16);
+                pushLog(`Auto-ping ${shortPeer}: ${latency} ms`);
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 const entry = { ts: new Date().toISOString(), peer: shortPeer, peerId, latency: null, ok: false, error: message };
@@ -536,18 +532,14 @@ export function createLibp2pController({ api, storage, getPubKey, signEvent_, se
             pushLog(`Connected to ${state.lastDialPeer}`);
 
             if (node.services?.ping?.ping && connection?.remotePeer) {
-                const pingStart = performance.now();
-                let observed = false;
-                for await (const _ of node.services.ping.ping(connection.remotePeer)) {
-                    const latency = Math.max(0, Math.round(performance.now() - pingStart));
+                try {
+                    const latency = await node.services.ping.ping(connection.remotePeer);
                     state.lastPingLatency = `${latency} ms`;
                     pushLog(`Ping returned in ${state.lastPingLatency}`);
-                    observed = true;
-                    break;
-                }
-                if (!observed) {
-                    state.lastPingLatency = 'No ping result';
-                    pushLog('Ping completed without a readable latency.', 'warn');
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    state.lastPingLatency = '';
+                    pushLog(`Ping failed: ${message}`, 'warn');
                 }
             } else {
                 state.lastPingLatency = 'Ping service unavailable';

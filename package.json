@@ -27,16 +27,18 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:coverage:embed": "vitest run --coverage && node scripts/embed-coverage.js",
-    "test:e2e": "npx playwright test",
-    "test:all": "vitest run && npx playwright test",
+    "setup:browser-tools": "node scripts/install-browser-tools.js",
+    "test:e2e": "npx playwright test --project=chrome",
+    "test:all": "vitest run && npx playwright test --project=chrome",
+    "test:cross-browser": "node scripts/test-cross-browser.js",
     "p2p:peer": "node scripts/p2p-test-peer.js",
+    "p2p:relay": "node scripts/p2p-relay-daemon.js",
     "p2p:ping": "node scripts/p2p-test-peer.js ping",
     "test:e2e:settings": "npx playwright test test/e2e/settings-persistence.spec.js",
     "test:e2e:consent": "npx playwright test test/e2e/consent-redress.e2e.spec.js test/e2e/consent-sheet-lifecycle.e2e.spec.js",
     "firefox:run": "npm run build:firefox && npx --yes web-ext run --target=firefox-desktop --source-dir=distros/firefox",
     "test:e2e:firefox": "node test/e2e/firefox-settings.mjs",
-    "test:e2e:safari": "node test/e2e/safari-settings.mjs",
-    "test:cross-browser": "npm run build:all && npm run test:e2e:firefox && npm run test:e2e:safari"
+    "test:e2e:safari": "node test/e2e/safari-settings.mjs"
   },
   "author": "Humanjava Enterprises Inc",
   "license": "MIT",
@@ -48,6 +50,7 @@
     "@libp2p/gossipsub": "15.0.17",
     "@libp2p/identify": "^4.1.15",
     "@libp2p/ping": "^3.1.14",
+    "@libp2p/tcp": "^11.0.29",
     "@libp2p/webrtc": "6.1.0",
     "@libp2p/websockets": "^10.1.22",
     "@libp2p/yamux": "^8.0.4",
@@ -63,6 +66,7 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/forms": "^0.5.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "chrome-webstore-upload-cli": "^4.0.1",
     "esbuild": "^0.28.1",
     "geckodriver": "^6.1.1",
@@ -71,7 +75,6 @@
     "selenium-webdriver": "^4.46.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^3.4.12",
-    "vitest": "^4.1.10",
-    "@vitest/coverage-v8": "^4.1.10"
+    "vitest": "^4.1.10"
   }
 }

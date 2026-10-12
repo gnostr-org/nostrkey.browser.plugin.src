@@ -1,9 +1,18 @@
 #!/usr/bin/env node
 
+const fs = require('fs');
+
 const DEFAULT_TOPIC = 'gnostr';
 const DEFAULT_PING_INTERVAL_MS = 1000;
 const DEFAULT_PUBLISH_INTERVAL_MS = 1000;
 const DETERMINISTIC_EXTENSION_PEER_ID = '12D3KooWNeFQq6UZ8meyknx3sH7CGZUsJsSNntzRsDuFTdAwpDBP';
+
+const DEFAULT_BOOTSTRAP = [
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
+    '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
+];
 
 // Browser-safe WSS bootstrap relays that the extension also uses. These can
 // act as circuit-relay intermediaries so this test peer can reach the
@@ -35,30 +44,37 @@ function parseArgs(argv) {
         return { command: 'ping', count, topic };
     }
 
-    const options = { command: 'run', dialExtension: true, extraDials: [] };
+    const options = { command: 'run', dialExtension: true, extraDials: [], bootstrap: [], relayJson: null };
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--no-dial-ext') {
             options.dialExtension = false;
         } else if (args[i] === '--dial' && args[i + 1]) {
             options.extraDials.push(args[i + 1]);
             i++;
+        } else if (args[i] === '--bootstrap' && args[i + 1]) {
+            options.bootstrap.push(args[i + 1]);
+            i++;
+        } else if (args[i] === '--relay-json' && args[i + 1]) {
+            options.relayJson = args[i + 1];
+            i++;
         }
     }
     return options;
 }
 
-async function createNode() {
-    const [{ createLibp2p }, { webSockets }, { webRTCDirect }, { noise }, { yamux }, { gossipsub }, { identify }, { bootstrap }, { circuitRelayServer, circuitRelayTransport }, { dcutr }, { multiaddr }, { peerIdFromString }] = await Promise.all([
+async function createNode(bootstrapAddrs = []) {
+    const [{ createLibp2p }, { webSockets }, { webRTCDirect }, { noise }, { yamux }, { gossipsub }, { identify }, { bootstrap }, { circuitRelayServer, circuitRelayTransport }, { dcutr }, { ping }, { multiaddr }, { peerIdFromString }] = await Promise.all([
         import('libp2p'),
         import('@libp2p/websockets'),
         import('@libp2p/webrtc'),
-        import('@libp2p/noise'),
+        import('@chainsafe/libp2p-noise'),
         import('@libp2p/yamux'),
         import('@libp2p/gossipsub'),
         import('@libp2p/identify'),
         import('@libp2p/bootstrap'),
         import('@libp2p/circuit-relay-v2'),
         import('@libp2p/dcutr'),
+        import('@libp2p/ping'),
         import('@multiformats/multiaddr'),
         import('@libp2p/peer-id'),
     ]);
@@ -79,6 +95,7 @@ async function createNode() {
             streamMuxers: [yamux()],
             services: {
                 identify: identify(),
+                ping: ping(),
                 pubsub: gossipsub({
                     allowPublishToZeroTopicPeers: true,
                     emitSelf: true,
@@ -91,12 +108,7 @@ async function createNode() {
             },
             peerDiscovery: [
                 bootstrap({
-                    list: [
-                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN',
-                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa',
-                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb',
-                        '/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt',
-                    ],
+                    list: [...DEFAULT_BOOTSTRAP, ...bootstrapAddrs],
                     timeout: 0,
                     tagTTL: Infinity,
                 }),
@@ -158,6 +170,22 @@ async function maintainExtensionConnection(node, multiaddr, enabled) {
     }, 10000);
 }
 
+function readRelayJson(path) {
+    try {
+        const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+        const peerId = data.peerId;
+        const addresses = Array.isArray(data.addresses) ? data.addresses : [];
+        if (!peerId && !addresses.length) {
+            console.warn(`relay JSON ${path} missing peerId/addresses`);
+            return [];
+        }
+        return addresses.length ? addresses : [`/p2p/${peerId}`];
+    } catch (error) {
+        console.error(`failed to read relay JSON ${path}: ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+    }
+}
+
 async function dialExtraTargets(node, multiaddr, targets) {
     for (const target of targets) {
         try {
@@ -199,12 +227,8 @@ async function runRunCommand(node) {
             const remotePeer = connection?.remotePeer;
             if (!remotePeer) continue;
             try {
-                const start = performance.now();
-                for await (const _ of node.services.ping.ping(remotePeer)) {
-                    const latency = Math.max(0, Math.round(performance.now() - start));
-                    console.log(`ping ${remotePeer.toString()}: ${latency} ms`);
-                    break;
-                }
+                const latency = await node.services.ping.ping(remotePeer);
+                console.log(`ping ${remotePeer.toString()}: ${latency} ms`);
             } catch (error) {
                 console.log(`ping ${remotePeer.toString()} failed: ${error instanceof Error ? error.message : String(error)}`);
             }
@@ -239,7 +263,8 @@ function printExtensionInstructions(multiaddrs) {
 async function main() {
     const options = parseArgs(process.argv);
 
-    const { node, multiaddr } = await createNode();
+    const relayTargets = options.relayJson ? readRelayJson(options.relayJson) : [];
+    const { node, multiaddr } = await createNode(options.bootstrap);
     await node.start();
 
     console.log('peer id:', node.peerId.toString());
@@ -256,7 +281,7 @@ async function main() {
     }
 
     printExtensionInstructions(addrs);
-    await dialExtraTargets(node, multiaddr, options.extraDials);
+    await dialExtraTargets(node, multiaddr, [...relayTargets, ...options.extraDials]);
     await maintainExtensionConnection(node, multiaddr, options.dialExtension);
     await runRunCommand(node);
 }

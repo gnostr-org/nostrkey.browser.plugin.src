@@ -32,6 +32,11 @@ function el(id) {
     return document.getElementById(id);
 }
 
+function getQueryParam(name) {
+    const params = new URLSearchParams(window.location.search);
+    return params.get(name) || '';
+}
+
 function renderResult(container, name, ok, error) {
     const row = document.createElement('div');
     row.className = `result ${ok ? 'pass' : 'fail'}`;
@@ -95,8 +100,9 @@ test('nip19 npub encode/decode round-trip', async () => {
     const { publicKey } = await generateKeyPair();
     const npub = nip19.npubEncode(publicKey);
     assert(typeof npub === 'string' && npub.startsWith('npub1'), 'npub format');
-    const decoded = nip19.npubDecode(npub);
-    assert(decoded === publicKey, 'decoded pubkey mismatch');
+    const decoded = nip19.decode(npub);
+    assert(decoded.type === 'npub', `decoded type ${decoded.type}`);
+    assert(decoded.data === publicKey, 'decoded pubkey mismatch');
 });
 
 test('encrypt/decrypt round-trip', async () => {
@@ -270,6 +276,7 @@ function initMeshLab() {
     const storage = makeFakeStorage();
     const logEl = el('node-log');
     let renderedLogCount = 0;
+    const relayAddr = getQueryParam('relay').trim();
 
     function appendLog(text, kind = 'info') {
         const line = document.createElement('div');
@@ -295,6 +302,13 @@ function initMeshLab() {
         sendStatusUpdate: (status) => renderMeshStatus(status),
         peerSeed,
     });
+
+    if (relayAddr) {
+        el('configured-relay').textContent = relayAddr;
+        el('configured-relay').classList.remove('muted');
+        log(`Using relay bootstrap address: ${relayAddr}`);
+        void controller.setBootstrapAddrs([relayAddr]);
+    }
 
     let heartbeatInterval = null;
     let presenceInterval = null;

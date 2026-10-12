@@ -165,6 +165,31 @@ npm test                # run the full vitest suite
 ```
 CI runs the test suite on every push; the build is gated on a green run.
 
+### Cross-browser & remote P2P testing
+
+```bash
+# One-time setup: install Playwright browsers + enable Safari WebDriver
+npm run setup:browser-tools
+
+# Full cross-browser suite (Chrome extension, Firefox/Safari Selenium, smoke tests)
+npm run test:cross-browser
+
+# Standalone hole-punching / circuit-relay daemon (run on a remote host)
+npm run p2p:relay -- --ws-port 8080 --announce relay.example.com --output ./p2p-relay.json
+
+# Node test peer that auto-dials the relay above
+node scripts/p2p-test-peer.js --relay-json ./p2p-relay.json
+
+# Browser self-test page can also bootstrap through the relay
+# open /test/test.html?relay=/dns4/relay.example.com/tcp/8080/ws/p2p/<peer-id>
+```
+
+The relay daemon starts a libp2p node with WebSocket, TCP, WebRTC-direct, and
+circuit-relay-v2 transports. It writes its peer ID and dialable addresses to a
+JSON file so remote browser nodes and the Node test peer can reach it. Use
+`--announce <host>` when the daemon runs behind NAT or on a remote server to
+advertise a public DNS address instead of `0.0.0.0`.
+
 ### Tech Stack
 - Vanilla JS (no framework — Alpine.js was removed)
 - esbuild bundler
