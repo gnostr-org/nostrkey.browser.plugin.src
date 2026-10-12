@@ -48,6 +48,34 @@ jobs:
             test-results/
           retention-days: 7
 
+  # Cross-browser live P2P consensus smoke test. Starts the relay daemon and
+  # opens test/test.html in Chromium, Firefox, and WebKit. Non-gating while we
+  # observe CI stability of WebRTC/WebSocket transports in headless runners.
+  e2e-cross-browser-smoke:
+    name: e2e — cross-browser P2P consensus (non-gating)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm run build:all
+      - name: cross-browser P2P consensus smoke test
+        run: xvfb-run -a npx playwright test test/e2e/cross-browser-smoke.spec.mjs
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-cross-browser-smoke
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   # Settings + extension e2e — best-effort (hits a live URL / display quirks), so
   # it stays non-gating; failures don't red the build.
   e2e-legacy:
